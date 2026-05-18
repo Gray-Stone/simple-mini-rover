@@ -1,0 +1,26 @@
+main_controller:
+  part: ESP32-WROOM-32 / ESP32-WROOM-32UE
+  role: lower controller, Wi-Fi, Bluetooth, ESP-NOW, UART/JSON processing
+motor_driver:
+  part: TB6612FNG
+  role: dual H-bridge; drives two motor groups, two no-encoder motors in parallel per group
+power_monitor:
+  part: INA219
+  address: 0x42
+  shunt_ohms: 0.01
+  role: input voltage/current/power monitoring
+imu:
+  accel_gyro: QMI8658C
+  magnetometer: AK09918C
+  role: 9-axis attitude/heading sensing
+barometer:
+  part: BMP280
+  note: appears on General Driver schematic sensor block
+usb_uart:
+  part: CP2102-class USB-UART circuitry
+  role: ESP32 programming/serial; separate lidar USB-UART path also documented
+motor:
+  part: GF12-N20 Motor 12V200rpm Gearbox
+  count: 4
+  encoder: false
+  notes: stock rover uses no-encoder control; encoder-capable board headers are unused unless motors are changed

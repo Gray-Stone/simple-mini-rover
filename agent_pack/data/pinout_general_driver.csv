@@ -1,0 +1,25 @@
+category,signal,esp32_gpio,board_net_or_chip_pin,notes
+motor_a,PWMA,25,TB6612 PMMA/PWMA S0,Motor A PWM
+motor_a,AIN2,17,TB6612 AIN2 S1,Motor A direction
+motor_a,AIN1,21,TB6612 AIN1 S2,Motor A direction
+motor_b,BIN1,22,TB6612 BIN1 S3,Motor B direction
+motor_b,BIN2,23,TB6612 BIN2 S4,Motor B direction
+motor_b,PWMB,26,TB6612 PWMB S5,Motor B PWM
+motor_common,STBY,,TB6612 STBY tied 3V3,Not GPIO controlled in schematic crop
+encoder_header,A_C1,34,H3 through 10R/ESD,Encoder-capable Motor A header; unused on stock no-encoder motors
+encoder_header,A_C2,35,H3 through 10R/ESD,Encoder-capable Motor A header; unused on stock no-encoder motors
+encoder_header,B_C1,27,H4 through 10R/ESD,Encoder-capable Motor B header; unused on stock no-encoder motors
+encoder_header,B_C2,16,H4 through 10R/ESD,Encoder-capable Motor B header; unused on stock no-encoder motors
+i2c,IIC_SDA,32,IIC_SDA,SDA for INA219/OLED/IMU-related I2C
+i2c,IIC_SCL,33,IIC_SCL,SCL for INA219/OLED/IMU-related I2C
+sd,SD_CS,15,MicroSD CS,SPI CS
+sd,SPI_MO,13,MicroSD MOSI,SPI MOSI
+sd,SPI_CK,14,MicroSD SCK,SPI clock
+sd,SPI_SO,12,MicroSD MISO,SPI MISO
+serial_bus_servo,U1RXD,18,Serial1 RX / S_RXD,ST3215 bus servo tutorial receive pin
+serial_bus_servo,U1TXD,19,Serial1 TX / S_TXD,ST3215 bus servo tutorial transmit pin
+expansion,IO4,4,IO4/PWM servo,PWM servo tutorial pin
+expansion,IO5,5,IO5,Extra GPIO/PWM expansion
+boot,IO0,0,GPIO0,Boot strap/download pin; avoid casual use
+host_serial,U0TX,,U0TX/P_RX,ESP32 UART0 / host serial path as shown in schematic
+host_serial,U0RX,,U0RX/P_TX,ESP32 UART0 / host serial path as shown in schematic

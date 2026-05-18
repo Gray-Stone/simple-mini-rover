@@ -1,0 +1,24 @@
+vendor_pages:
+  wave_rover_wiki: https://www.waveshare.com/wiki/WAVE_ROVER
+  wave_rover_product: https://www.waveshare.com/wave-rover.htm
+  general_driver_wiki: https://www.waveshare.com/wiki/General_Driver_for_Robots
+  general_driver_product: https://www.waveshare.com/general-driver-for-robots.htm
+vendor_archives:
+  wave_rover_demo_zip: https://files.waveshare.com/upload/e/e6/WAVE_ROVER_demo.zip
+  wave_rover_chassis_dxf_rar: https://files.waveshare.com/upload/5/51/WAVE_ROVER_DXF.rar
+  wave_rover_chassis_pdf_rar: https://files.waveshare.com/upload/b/b4/WAVE_ROVER_PDF.rar
+  wave_rover_mounting_plate_dxf_rar: https://files.waveshare.com/upload/e/ef/WAVE_ROVER-EP_DXF.rar
+  wave_rover_mounting_plate_pdf_rar: https://files.waveshare.com/upload/a/ab/WAVE_ROVER-EP_PDF.rar
+  wave_rover_model_stl_rar: https://files.waveshare.com/upload/e/ec/WAVE_ROVER_MODEL_STL.rar
+  general_driver_schematic_pdf: https://files.waveshare.com/upload/3/37/General_Driver_for_Robots.pdf
+  general_driver_demo_zip: https://files.waveshare.com/upload/0/0c/UGV01_BASE.zip
+  general_driver_structural_dxf_zip: https://files.waveshare.com/upload/5/50/GENERAL-DRIVER-FOR-ROBOTS-STR-DXF.zip
+  general_driver_structural_pdf_zip: https://files.waveshare.com/upload/0/0a/GENERAL-DRIVER-FOR-ROBOTS-STR-PDF.zip
+  general_driver_step_zip: https://files.waveshare.com/upload/8/8e/General_Driver_for_Robots_STEP.zip
+reference_images:
+  wave_rover_size_1: https://www.waveshare.com/img/devkit/accBoard/WAVE-ROVER/WAVE-ROVER-details-size-1.jpg
+  wave_rover_size_2: https://www.waveshare.com/img/devkit/accBoard/WAVE-ROVER/WAVE-ROVER-details-size-2.jpg
+third_party_refs:
+  waveshare_rover_development_setup: https://github.com/winetree94/waveshare-rover-development-setup
+  ros2_wave_rover: https://github.com/antlassagne/ros2-wave-rover
+  wave_rover_serial: https://github.com/msanterre/wave_rover_serial

@@ -1,0 +1,34 @@
+rover:
+  outline_mm: [194, 168, 100]
+  chassis_height_mm: 33.70
+  tire_diameter_mm: 80
+  tire_width_mm: 42.50
+  body_material: "2 mm 5052 aluminum alloy"
+  weight_g: 860
+  payload_kg: 0.8
+  max_speed_mps: 1.25
+  vertical_obstacle_mm: 40
+  climbing_angle_deg: 22
+  minimum_turning_radius_m: 0
+mounting_plate_image_markers_mm:
+  central_mounting_rect: [58, 49]
+  green_outer_envelope: [58, 86]
+  square_central_pattern: [34, 34]
+  left_module_vertical_spacing: 46.80
+  left_offset_to_main_reference: 31.92
+  side_bracket_lower_hole_spacing: 21.00
+general_driver_board:
+  pcb_size_mm: [65, 65]
+  mounting_hole_spacing_mm: [49, 58]
+  mounting_hole_diameter_mm: 3
+motor:
+  model: GF12-N20 Motor 12V200rpm Gearbox
+  rated_voltage_v: 12
+  rated_current_a: 0.055
+  stall_current_a: 0.45
+  rated_torque_kg_cm: 0.09
+  stall_torque_kg_cm: 0.7
+  rated_output_power_w: 1.5
+  no_load_speed_rpm: "66 +/- 10% per wiki table; product name/spec also says 200RPM gearbox"
+  body_size_mm: [34, 12]
+  shaft_size_mm: [4, 10]

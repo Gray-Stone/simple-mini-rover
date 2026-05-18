@@ -1,0 +1,34 @@
+{
+  "movement": [
+    {
+      "name": "CMD_SPEED_CTRL",
+      "json": {"T": 1, "L": 0.5, "R": 0.5},
+      "notes": "Recommended for WAVE ROVER. L/R range -0.5 to +0.5. On WAVE ROVER without encoders this is PWM percentage, not measured speed."
+    },
+    {
+      "name": "CMD_PWM_INPUT",
+      "json": {"T": 11, "L": 164, "R": 164},
+      "notes": "Raw PWM debug control. L/R range -255 to +255. Low PWM may not overcome motor deadband."
+    },
+    {
+      "name": "CMD_ROS_CTRL",
+      "json": {"T": 13, "X": 0.1, "Z": 0.3},
+      "notes": "Wiki says only for UGV01 with encoder; do not use as true closed-loop velocity control on stock WAVE ROVER."
+    }
+  ],
+  "feedback": [
+    {"name": "IMU", "json": {"T": 126}},
+    {"name": "CMD_BASE_FEEDBACK", "json": {"T": 130}},
+    {"name": "continuous_feedback_off", "json": {"T": 131, "cmd": 0}},
+    {"name": "continuous_feedback_on", "json": {"T": 131, "cmd": 1}},
+    {"name": "serial_echo_off", "json": {"T": 143, "cmd": 0}},
+    {"name": "serial_echo_on", "json": {"T": 143, "cmd": 1}}
+  ],
+  "io_and_modules": [
+    {"name": "OLED_line", "json": {"T": 3, "lineNum": 0, "Text": "putYourTextHere"}},
+    {"name": "OLED_restore", "json": {"T": -3}},
+    {"name": "IO4_IO5_PWM", "json": {"T": 132, "IO4": 255, "IO5": 255}},
+    {"name": "module_model", "json": {"T": 4, "cmd": 0}},
+    {"name": "pantilt", "json": {"T": 133, "X": 45, "Y": 45, "SPD": 0, "ACC": 0}}
+  ]
+}
