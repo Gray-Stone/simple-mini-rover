@@ -1,6 +1,6 @@
 # Current Status
 
-Date: 2026-05-18
+Date: 2026-05-19
 
 ## Machine
 
@@ -69,14 +69,38 @@ Date: 2026-05-18
   - Checkerboard squares: 9 across by 7 down.
   - User description: 4 white + 5 black across, 4 black + 3 white down.
   - OpenCV inner-corner pattern: `8 x 6`.
-  - Physical square size still needs to be measured before running the calibration solve.
+  - Calibration square size used in the current solve: `0.03 m`.
+  - Installed `mrcal` still rejects native non-square board detection through `mrgingham`, so the current workflow uses an OpenCV-generated corners cache and then runs the native `mrcal` solve on that cache.
 - Camera calibration capture workflow:
   - Use `tools/camera_cal_server.py --camera /dev/video0 --host 0.0.0.0 --port 8080`.
-  - Preview is browser-based and low-resolution; saved calibration frames are high-resolution JPEGs.
-  - Capture sessions intentionally save only full-resolution images plus `session.json` and `manifest.jsonl`.
+  - The camera now runs continuously at capture resolution, defaulting to `1920x1080` MJPG at `--fps 30`; browser preview is a resized copy of the same capture stream.
+  - Preview and stream defaults are `640x360` to preserve the 16:9 aspect ratio of the default capture mode.
+  - Preview scoring now reports checkerboard detection, sharpness, exposure, board size, board location, board tilt, and novelty versus saved images at the same focus value. Scoring is throttled by `--score-interval`, default `0.20` seconds.
+  - Capture saves the latest full-resolution frame already in memory, so it does not switch camera modes or perform a high-resolution warmup before saving.
+  - Saved images remain full resolution, but capture metadata scoring uses a resized copy of the same full-resolution frame instead of running checkerboard detection on the full 8 MP image.
+  - Capture sessions save full-resolution images under `images/focus_####/`, one JSON sidecar per image, `session.json`, and append-only `manifest.jsonl`.
+  - Each sidecar records current camera image controls: autofocus, focus, exposure mode/time, dynamic framerate, gain, brightness, contrast, saturation, gamma, sharpness, backlight compensation, white balance, and power-line frequency.
+  - The browser shows count summaries by focus, relative board location, tilt, and rotation; it does not load saved-image thumbnails into the page.
+  - The browser exposes the same camera image controls so exposure and white balance can be locked for repeatable capture.
+  - Recommended tuning order: manual exposure, dynamic framerate off, gain `0`, reduce exposure time until white-square clipping is low, then lock white balance; leave brightness/contrast/gamma/sharpness close to defaults unless needed.
+  - Reusing a `--session` reloads `manifest.jsonl` quickly for existing category count display and novelty scoring.
+- Camera calibration solve workflow:
+  - Preferred command is `python3 tools/mrcal_calibrate.py data/camera_calibration/captures/<timestamp> --square-size 0.03 --focal 2680`.
+  - `tools/mrcal_calibrate.py` writes the corners cache, runs `mrcal-calibrate-cameras`, exports residual/distortion/uncertainty plots, and writes `summary.json`, `analysis.json`, and `analysis.md`.
+  - `tools/camera_calibrate.py` remains available as a simple OpenCV-only baseline solve and cross-check.
+- Current `mrcal` result for session `20260519_023511`:
+  - Output directory: `data/camera_calibration/captures/20260519_023511/calibration/mrcal/`
+  - Solver RMS reprojection error: about `0.33 px`
+  - Worst residual: about `1.8 px`
+  - Outliers rejected: `51 / 2064` points
+  - Board observations used: `43`
+  - Coverage convex hull: about `80.8%` of the imager
+  - Current generated analysis reports an empty valid-intrinsics region for this solve, so downstream use should treat edge-of-frame behavior conservatively.
 - Camera focus:
+  - The capture server disables UVC continuous autofocus on launch unless `--autofocus` is passed.
   - Current UVC controls report `focus_automatic_continuous=0`, so continuous autofocus is already disabled.
   - Current manual `focus_absolute` value is `432` on the Arducam.
+  - The capture browser exposes focus in the normal camera-control list with a numeric input beside the slider.
   - Calibration and docking should use the same locked focus value; changing focus after calibration can change effective intrinsics enough to hurt pose accuracy.
 - Pi-side I2C was not reliable during probing and is not the preferred voltage source. Use ESP32 serial feedback for rover voltage.
 - Old development folders were moved to `../archive` .
