@@ -11,3 +11,4 @@ __pycache__/
 *.p12
 *.pfx
 data/camera_calibration/captures/
+data/motion_probes/

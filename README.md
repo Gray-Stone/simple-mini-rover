@@ -6,6 +6,8 @@ Current contents:
 
 - `agent_pack/`: collected rover docs, schematic crops, command notes, pinout notes, and vendor references.
 - `tools/rover_status.py`: small serial status probe for the rover JSON API.
+- `tools/rover_control.py`: basic Phase 3 control helper for body-frame `+X` / `+Z` motion pulses over `/dev/serial0`.
+- `tools/rover_motion_probe.py`: motion and IMU probe utility that logs pulse-response runs under `data/motion_probes/`.
 - `tools/requirements.txt`: Python packages used by local ESP32 tooling.
 - `tools/camera_calibrate.py`: simple OpenCV-only checkerboard solve against a saved capture session.
 - `tools/mrcal_corners_cache.py`: generate an `mrcal` corners cache from saved checkerboard images.
@@ -23,10 +25,28 @@ Useful checks:
 ```bash
 tools/rover_status.py --port /dev/serial0
 tools/rover_status.py --port /dev/ttyUSB0
+tools/rover_control.py forward-test --pwm 0.10 --duration 0.40
+tools/rover_control.py pulse --x-pwm 0.00 --z-pwm 0.35 --duration 0.20
+tools/rover_motion_probe.py forward --port /dev/serial0 --pwm 0.50 --duration 0.35
+tools/rover_motion_probe.py turn-ccw --port /dev/serial0 --pwm 0.50 --duration 0.25
 tools/.venv/bin/esptool --port /dev/ttyUSB0 --baud 115200 chip-id
 tools/apriltag_probe.py --camera /dev/video0 --family tag16h5 --id 0 --tag-size 0.034 --width 1280 --height 720 --frames 120 --focus-absolute 432
 tools/camera_cal_server.py --camera /dev/video0 --host 0.0.0.0 --port 8080 --focus-absolute 432
 ```
+
+Current rover motion/control notes:
+
+- Runtime motion control should use `/dev/serial0`. Opening `/dev/ttyUSB0` resets the ESP32 and is better treated as a flashing/debug path.
+- Body-frame convention is right-handed with `+X` forward, `+Y` left, `+Z` up. Positive yaw / positive `omega_z` means CCW viewed from above.
+- Stock `T=1` sign convention on this rover is `L > 0` = left forward, `R > 0` = right forward.
+- Quick floor checks on `2026-05-20` found these practical minimums for visible response:
+  - forward `+X`: about `0.10` PWM
+  - Z turning: about `0.30` PWM gives first visible turn response but is unstable
+  - Z turning: about `0.35` PWM is a better practical minimum for turn tests
+- These are approximate thresholds only; they will move with floor friction, battery voltage, load, and tire condition.
+- IMU use guidance:
+  - for short turn pulses, integrated `gz` is more credible than fused yaw `y`
+  - for straight pulses, heading disturbance is smaller, but accelerometers are still too noisy for useful distance estimation
 
 Camera calibration image collection:
 

@@ -102,6 +102,31 @@ Date: 2026-05-19
   - Current manual `focus_absolute` value is `432` on the Arducam.
   - The capture browser exposes focus in the normal camera-control list with a numeric input beside the slider.
   - Calibration and docking should use the same locked focus value; changing focus after calibration can change effective intrinsics enough to hurt pose accuracy.
+- Motion/control convention, confirmed on `2026-05-20`:
+  - Active Pi-to-rover runtime control path is `/dev/serial0`.
+  - Opening `/dev/ttyUSB0` resets the ESP32 and is better treated as a flashing/debug port, not the normal live control path.
+  - Rover body frame is defined as right-handed with `+X` forward, `+Y` left, `+Z` up.
+  - Positive yaw / positive `omega_z` / positive Z turn means counter-clockwise viewed from above, which is a left turn.
+  - Positive forward motion means `+X`.
+  - Stock `T=1` sign convention on this rover is:
+    - `L > 0`: left side drives forward
+    - `R > 0`: right side drives forward
+    - Pure positive-yaw pulse therefore uses `L < 0`, `R > 0`
+    - Pure negative-yaw pulse therefore uses `L > 0`, `R < 0`
+  - Quick floor deadband checks on `2026-05-20` suggest these practical minimums for visible response:
+    - Forward `+X`: about `0.10` PWM is the minimum that produces noticeable motion.
+    - Positive/negative Z turn: about `0.30` PWM is the minimum that produces noticeable turning, but this is not stable enough to be considered a good operating point.
+    - Positive/negative Z turn: about `0.35` PWM is a better practical minimum for turning tests.
+  - These are threshold observations, not precise calibration constants:
+    - Near-threshold forward motion is already not very sharp or stable.
+    - Near-threshold turning is strongly affected by wheel scrub and floor friction.
+    - Re-check these values if payload, battery voltage, floor surface, or tire condition changes materially.
+  - Short floor tests at full `T=1` command magnitude show the IMU is responsive during motion, but fused yaw `y` appears to jump much more than integrated `gz` during aggressive turn pulses. For short turn control, treat `gz` integration as the more credible signal until proven otherwise.
+  - Short straight-line floor test at full `T=1` command magnitude (`L=R=0.5` for about `0.35 s`) disturbed heading far less than turn-in-place:
+    - fused yaw change during motion was about `-1.3 deg`
+    - integrated `gz` yaw change was about `-0.4 deg`
+    - mean `|gz|` during motion was about `6 dps`
+  - Acceleration channels `ax/ay/az` respond strongly to launch and settling, but are noisy enough that they should not be treated as useful distance feedback on this platform.
 - Pi-side I2C was not reliable during probing and is not the preferred voltage source. Use ESP32 serial feedback for rover voltage.
 - Old development folders were moved to `../archive` .
 - Keep generated Python environments out of git. Recreate the tool venv with:

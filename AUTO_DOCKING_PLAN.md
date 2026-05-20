@@ -34,10 +34,27 @@ The current firmware exposes useful IMU data:
 This is enough for a Pi-side, closed-loop-ish yaw controller:
 
 - Read the starting yaw.
-- Send slow differential motor commands with `T=1`.
+- Send bounded differential motor commands with `T=1`.
 - Poll yaw from `T=126` or `T=130`.
 - Stop when the wrapped yaw delta reaches the target angle.
 - Use a timeout, conservative PWM, and a final zero command.
+
+Current control findings from floor tests on `2026-05-20`:
+
+- Runtime motion control should use `/dev/serial0`. Opening `/dev/ttyUSB0` resets the ESP32 and is better treated as a flashing/debug path.
+- Use rover body-frame convention: `+X` forward, `+Y` left, `+Z` up. Positive yaw / positive `omega_z` / positive Z turn is counter-clockwise viewed from above.
+- Stock `T=1` sign convention on this rover is:
+  - `L > 0`: left side forward
+  - `R > 0`: right side forward
+  - Positive Z turn command: `L < 0`, `R > 0`
+  - Negative Z turn command: `L > 0`, `R < 0`
+- Practical minimum motion levels are roughly:
+  - Forward `+X`: `0.10` PWM for first visible motion
+  - Z turning: `0.30` PWM for first visible turn response, but unstable
+  - Z turning: `0.35` PWM as a better practical minimum for turn tests
+- These should be treated as floor-condition-dependent thresholds, not sharp calibrated values. Response near threshold is already weak and inconsistent, especially for turning because of wheel scrub.
+- Under aggressive turn pulses, fused yaw `y` is much less trustworthy than integrated `gz`. For short turn estimation, prefer `gz` integration over direct use of absolute yaw.
+- Under short straight pulses, heading disturbance is much smaller than under turn-in-place pulses, but accelerometer channels are still too noisy for distance estimation.
 
 This is not enough for reliable `move X distance` control:
 
@@ -73,6 +90,8 @@ Custom ESP32 firmware should be deferred unless stock firmware fails a concrete 
    - Provide immediate `stop()` and send zero on process exit.
    - Add a watchdog: stale camera frame, serial failure, tag loss, low voltage, timeout, or user interrupt all command zero.
    - Add an IMU yaw helper for approximate `turn_degrees()` behavior.
+   - Encode the rover body-frame convention directly in the control layer: `+X` forward, positive Z turn = CCW/left.
+   - Respect the current observed deadbands: forward commands below about `0.10` PWM may do nothing, and turn commands below about `0.30` to `0.35` PWM may be too weak or inconsistent to use.
 
 4. Implement visual docking control.
    - Estimate tag pose from each camera frame.
