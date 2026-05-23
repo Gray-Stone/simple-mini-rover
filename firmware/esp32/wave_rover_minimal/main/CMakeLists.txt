@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "imu.c"
+        "motor.c"
+        "protocol.c"
+    INCLUDE_DIRS
+        "."
+)

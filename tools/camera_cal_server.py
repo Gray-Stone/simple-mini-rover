@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import signal
 import subprocess
 import threading
 import time
@@ -11,6 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, render_template_string, request as flask_request, send_from_directory
+from werkzeug.serving import make_server
 
 
 def parse_args() -> argparse.Namespace:
@@ -1380,11 +1382,24 @@ def main() -> int:
     state = CameraState(args)
     app = create_app(state)
     state.start()
+    stop_flag = {"stop": False}
+
+    def request_stop(signum, frame):
+        stop_flag["stop"] = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    server = make_server(args.host, args.port, app, threaded=True)
+    server.timeout = 0.5
+    if hasattr(server, "daemon_threads"):
+        server.daemon_threads = True
     print(f"session={state.session}")
     print(f"open http://<pi-hostname-or-ip>:{args.port}/")
     try:
-        app.run(host=args.host, port=args.port, threaded=True)
+        while not stop_flag["stop"]:
+            server.handle_request()
     finally:
+        server.server_close()
         state.stop()
     return 0
 

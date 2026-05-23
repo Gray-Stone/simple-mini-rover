@@ -1,6 +1,6 @@
 # Current Status
 
-Date: 2026-05-19
+Date: 2026-05-23
 
 ## Machine
 
@@ -22,7 +22,8 @@ Date: 2026-05-19
 - USB serial bridge: Silicon Labs CP210x, `/dev/ttyUSB0`
 - GPIO UART: `/dev/serial0 -> ttyAMA0`
 - GPIO14 is `TXD0`; GPIO15 is `RXD0`
-- Serial settings: 115200 baud, newline-terminated JSON
+- Stock firmware serial settings: 115200 baud, newline-terminated JSON
+- Current custom minimal firmware serial settings: 460800 baud, binary framed protocol
 - TX/RX cabling was corrected by swapping the pair. Both paths now work:
   - USB serial control works.
   - Pi GPIO UART control through `/dev/serial0` works.
@@ -48,6 +49,25 @@ Date: 2026-05-19
   - LittleFS for config and mission files
   - OLED, INA219 voltage, IMU, motor control, optional arm/gimbal modules
 - Stock partition table has OTA-style app slots (`app0`, `app1`) plus `otadata`, but the stock sketch does not appear to implement ArduinoOTA or a firmware upload endpoint. USB flashing is the confirmed recovery/update path.
+- Current flashed firmware is the custom direct ESP-IDF lower controller under `firmware/esp32/wave_rover_minimal/`.
+- The custom firmware uses ESP32 UART0 at 460800 baud for a compact binary protocol:
+  - fixed 8-byte packed header
+  - type-specific packed payload structs
+  - payload length in the header
+  - CRC16 as a wire trailer, not part of command structs
+  - `CMD_STOP`, `CMD_MOVE_REL`, `ACK`, and fixed-rate `TELEMETRY`
+- The host-side tool for that protocol is `tools/minimal_rover_serial.py`.
+- The runtime control loop is intentionally simple:
+  - one fixed-rate ESP-IDF task, not application-level interrupt handlers
+  - `5 ms` control step
+  - `40 ms` telemetry
+  - no motion queue; active moves reject a second move with `BUSY`
+  - STOP is accepted immediately
+- USB flashing over `/dev/ttyUSB0` requires temporarily releasing Pi `GPIO14/TXD0`, because the Pi TX line also reaches ESP32 UART0 RX:
+  - before flash: `raspi-gpio set 14 ip`
+  - after flash: `raspi-gpio set 14 a0`
+- Final post-flash check on `2026-05-22` restored `GPIO14` to `TXD0` and verified STOP/ACK plus IMU telemetry over `/dev/serial0`.
+- The custom firmware image size after cleanup was about `0x2f470` bytes, leaving about `82%` free in the smallest app partition.
 
 ## Notes
 
@@ -61,10 +81,18 @@ Date: 2026-05-19
   - USB `Arducam_8mp` is available as `/dev/video0`.
   - OpenCV can capture from `/dev/video0`.
   - OpenCV AprilTag dictionary detection works for the printed `tag16h5` ID 0 tag.
+  - `tools/apriltag_pose.py` now estimates live tag pose using the saved `mrcal` camera model plus OpenCV `solvePnP`.
+  - `tools/dock_pose_calibrate.py` now captures a short burst of visible docked-tag pose samples and saves the target pose JSON to `config/auto_docking/docked_tag_pose.json`.
+  - `tools/dock_heading_step.py` now provides a first single-step docking/heading experiment path: it senses a short burst of tag poses, reports off-axis and centerline metrics in the tag frame, and can optionally execute one one-sided arc pulse.
+  - `tools/tag_motion_probe.py` now combines AprilTag pose logging with ESP32 IMU polling and a tiny commanded rover pulse in one run.
+  - `tools/tag_motion_collect.py` now runs structured repeated linear and/or rotation batches and records batch-friendly metadata under `data/tag_motion_batches/` for later large-batch analysis.
   - Quick probe command detected the expected tag in 47 of 60 frames at requested `1280x720@30`; observed processing rate was about 4.3 FPS in the current Python/OpenCV probe.
   - `640x480` is faster, but the current tag view is only about 30 px per edge and can be intermittent depending on framing/lighting. Prefer `1280x720` for initial calibration and docking bring-up, then downshift only if the detection envelope remains reliable.
   - A warmed `1280x720` probe detected the expected tag in 21 of 30 frames with about 64 px mean edge length in the current setup.
   - Debug frame from the quick probe was saved outside the repo at `/tmp/wave_rover_apriltag_debug.jpg`.
+  - Night/room-light testing on `2026-05-20` exposed a specific failure mode: when the scene is dark and only the dock tag is strongly illuminated, camera auto exposure can overreact and wash the tag out enough to lose detection. Future docking work should treat lighting as an explicit subsystem, not an afterthought.
+  - Daytime docking-step experiments later on `2026-05-20` found a different failure mode: in the current stand-off/setup, the tag was visibly in frame but OpenCV could not decode it reliably at `1280x720` or `1920x1080`, even after two small forward nudges.
+  - The same scene became usable again at `3264x2448 @ 15 fps` with manual exposure locked to `220` and autofocus enabled. A short `tools/apriltag_pose.py` run at that mode matched 5 of 10 frames, with mean edge length about `245 px` on the matched frames and range about `0.631 m`.
 - Camera calibration target:
   - Checkerboard squares: 9 across by 7 down.
   - User description: 4 white + 5 black across, 4 black + 3 white down.
@@ -90,18 +118,70 @@ Date: 2026-05-19
   - `tools/camera_calibrate.py` remains available as a simple OpenCV-only baseline solve and cross-check.
 - Current `mrcal` result for session `20260519_023511`:
   - Output directory: `data/camera_calibration/captures/20260519_023511/calibration/mrcal/`
+  - The capture session metadata shows `focus_absolute=350` for all images in this solve, so this model should be treated as a focus-350 calibration.
   - Solver RMS reprojection error: about `0.33 px`
   - Worst residual: about `1.8 px`
   - Outliers rejected: `51 / 2064` points
   - Board observations used: `43`
   - Coverage convex hull: about `80.8%` of the imager
   - Current generated analysis reports an empty valid-intrinsics region for this solve, so downstream use should treat edge-of-frame behavior conservatively.
+- Docked target pose capture:
+  - The current docked-reference pose was captured on `2026-05-20` and saved to `config/auto_docking/docked_tag_pose.json`.
+  - Target median translation in camera frame is about `[+0.0031, -0.0032, +0.3443] m`.
 - Camera focus:
   - The capture server disables UVC continuous autofocus on launch unless `--autofocus` is passed.
   - Current UVC controls report `focus_automatic_continuous=0`, so continuous autofocus is already disabled.
   - Current manual `focus_absolute` value is `432` on the Arducam.
   - The capture browser exposes focus in the normal camera-control list with a numeric input beside the slider.
   - Calibration and docking should use the same locked focus value; changing focus after calibration can change effective intrinsics enough to hurt pose accuracy.
+  - The currently saved docking calibration model is not tied to the current manual focus setting above; it is tied to session `20260519_023511`, which used `focus_absolute=350`.
+  - The daytime `3264x2448` recovery above depended on autofocus, so its live pose numbers are good enough for relative controller bring-up but should not be treated as final absolute docking truth against the current focus-350 calibration.
+- Lighting control path from archived software:
+  - The old Pi-side stack used ESP32 JSON command `{"T":132,"IO4":pwmA,"IO5":pwmB}` for 12 V switched outputs, not direct Raspberry Pi GPIO PWM.
+  - Archive code path: `../archive/ugv_rpi/base_ctrl.py` defines `lights_ctrl()` as `T=132` with `IO4` and `IO5`.
+  - Archived vendor notes say `IO4` is the chassis-light switch and `IO5` is the pan-tilt/head-light switch; WAVE ROVER without the PT light hardware may not have a usable lamp fitted even though the command exists.
+  - For future docking work, active illumination should be considered through this ESP32-controlled path first, with hardware presence confirmed on the actual rover.
+- Custom light on this rover:
+  - User clarified on `2026-05-20` that the actual docking-relevant lamp is a custom install wired on the Raspberry Pi header, powered from Pi `5V`, and not part of the stock WAVE ROVER light hardware path.
+  - Therefore the archived `T=132` ESP32 light path should not be assumed to control the real installed lamp on this rover.
+  - User later identified the two Pi header connections as `P39` and `P12`.
+  - On Raspberry Pi 40-pin headers, `P39` is `GND` and `P12` is `GPIO18` (`BCM 18`, hardware PWM-capable).
+  - Quick live test confirmed the lamp turns on when `GPIO18` is driven high, so the current software convention is active-high light control on `BCM18`.
+  - The most likely topology is a custom low-side or transistor-drive control path with `GPIO18` as the logic/control pin and `P39` as ground.
+  - `tools/light_ctrl.py` now provides a minimal helper for `on`, `off`, and `status`.
+- AprilTag pose convention:
+  - Live `tools/apriltag_pose.py` output uses the OpenCV camera frame: `+X` right in the image, `+Y` down in the image, `+Z` forward from the camera.
+  - The reported pose is the dock tag pose expressed in that camera frame from `solvePnP`.
+  - `tools/dock_pose_calibrate.py` stores the docked target pose in the same frame so later controller code can compare live pose directly against the saved target.
+  - Very small linear pulses at the forward-motion threshold (`0.10` PWM) were too weak to produce a reliable tag-pose displacement signal at the tested range.
+  - A larger backward pulse at `0.14` PWM for `0.40 s` did produce a useful visible-tag displacement: post-minus-pre translation was about `[+0.0044, +0.0049, +0.0818] m` in camera frame.
+  - A broader tag-assisted motion sweep on `2026-05-20` with fill light on and exposure locked at `238` showed:
+    - Linear pulses at `0.12` PWM for `0.30 s` were still too small to separate cleanly from tag-pose noise at the farther placement.
+    - Linear pulses at `0.16` PWM for `0.35 s` were useful:
+      - backward pulse: about `+0.033 m` in camera `+Z`
+      - forward pulse: about `-0.038 m` in camera `+Z`
+    - Small turn pulses at `0.35` to `0.40` PWM produced clear IMU yaw responses, but settled tag-pose change remained small or inconsistent in this setup.
+    - The final `turn-cw` test at `0.40` PWM for `0.14 s` lost pre-phase tag tracking, so that was treated as the current visibility/rotation envelope limit rather than pushing farther.
+  - After the robot was reset and placed a bit farther back, turn-only calibration became more informative:
+    - `turn-ccw` at `0.35` PWM for `0.10 s` shifted the settled post pose by about `[+0.0937, +0.0037, -0.0618] m` with post-minus-pre tag Euler change about `[+13.9, -13.4, -1.9] deg`.
+    - `turn-cw` at `0.35` PWM for `0.10 s` moved back in the opposite direction by about `[-0.0691, -0.0018, +0.0628] m` with post-minus-pre Euler change about `[-12.4, +9.4, +1.6] deg`.
+    - `0.35` PWM for `0.14 s` showed a similar reversible pattern.
+    - `turn-ccw` at `0.40` PWM for `0.10 s` produced a strong instantaneous IMU yaw response but almost no settled tag-pose change, which is consistent with scrub/settling rather than clean rigid-body rotation.
+    - `turn-cw` at `0.40` PWM for `0.10 s` lost pre-phase tag tracking, so that was taken as the next practical turn-calibration envelope limit from that setup.
+  - First `tools/dock_heading_step.py` live results on `2026-05-20`:
+    - Sense-only mode at `3264x2448 @ 15 fps` with `--autofocus --auto-exposure manual --exposure-time 220` reported stable enough metrics to use for single-step experiments.
+    - A representative sense burst reported about `bearing=-2.14 deg`, `heading_vs_normal=-0.09 deg`, `off_axis=-0.023 m`, and range about `0.625 m`.
+    - Relative to the saved docked reference, that same burst was about `-0.025 m` lateral and about `-0.127 m` farther away in tag-frame camera coordinates.
+    - Two one-sided left-arc tests using `L=0`, `R=0.16` for `0.25 s` and then `L=0`, `R=0.22` for `0.40 s` produced no clearly measurable change in the visual heading metrics, so those arc magnitudes/durations are below the current useful heading-step threshold on this floor/setup.
+  - Later daytime heading-step work on `2026-05-20` clarified the camera/focus picture:
+    - After the robot was nudged closer again, fixed `focus_absolute=350` at `1280x720` with manual exposure locked to `220` was good enough for stable AprilTag decode and pose again. The issue was not simply that focus `350` was unusable; detection margin depended strongly on stand-off and scene state.
+    - A representative fixed-focus sense burst at that mode reported about `bearing=+0.38 deg`, `heading_vs_normal=+4.80 deg`, `off_axis=-0.049 m`, range about `0.634 m`, and reprojection RMSE about `0.105 px`.
+    - A stronger one-sided right arc using left side only, `L=+0.28`, `R=0.00`, for `0.50 s`, produced a clearly measurable change: `heading_vs_normal` dropped by about `1.26 deg` and `off_axis` improved by about `+0.014 m`, so this is above the useful visual-servo threshold.
+  - Step-1 heading-to-tag experiments from a farther, off-center, roughly parallel start on `2026-05-20` showed an important controller split:
+    - Initial sense was about `bearing=+9.46 deg`, `heading_vs_normal=+4.85 deg`, `off_axis=+0.065 m`, and range about `0.798 m`.
+    - After one stronger right arc using left side only (`L=+0.28`, `R=0.00`, `0.50 s`), the raw tag-center bearing improved materially from about `+9.5 deg` to about `+4.8 deg`, but `heading_vs_normal` moved in the wrong direction and the off-axis estimate changed strongly.
+    - Subsequent checks and nudges showed that, for this step-1 start condition, raw `bearing` is the better servo signal than `heading_vs_normal`. The current heading-normal metric is more useful once the robot is already roughly pointed at and centered on the dock line.
+    - A later sense check in that same sequence showed bearing reduced further to about `+1.30 deg` while lateral miss remained significant, confirming that “point at the tag” and “be aligned to dock centerline” should be treated as separate stages.
 - Motion/control convention, confirmed on `2026-05-20`:
   - Active Pi-to-rover runtime control path is `/dev/serial0`.
   - Opening `/dev/ttyUSB0` resets the ESP32 and is better treated as a flashing/debug port, not the normal live control path.
@@ -126,7 +206,23 @@ Date: 2026-05-19
     - fused yaw change during motion was about `-1.3 deg`
     - integrated `gz` yaw change was about `-0.4 deg`
     - mean `|gz|` during motion was about `6 dps`
+  - For one-sided arc steering during visual servo bring-up, the current useful envelope is higher than the first conservative tests:
+    - `L=0`, `R=0.16` for `0.25 s` and `L=0`, `R=0.22` for `0.40 s` were below the clearly measurable visual-servo threshold in the earlier setup.
+    - `L=+0.28`, `R=0.00`, `0.50 s` was the first one-sided arc pulse that produced a clear visual heading/off-axis response.
+    - In the farther step-1 setup, `L=+0.24`, `R=0.00`, `0.45 s` still looked too weak, while later `L=+0.30`, `R=0.00`, `0.60 s` happened after bearing had already improved to about `+1.3 deg`, so it did not provide a clean additional reduction.
   - Acceleration channels `ax/ay/az` respond strongly to launch and settling, but are noisy enough that they should not be treated as useful distance feedback on this platform.
+- Custom ESP-IDF lower-controller bring-up, completed on `2026-05-22`:
+  - Direct QMI8658C gyro bring-up works over ESP32 I2C on GPIO32/GPIO33.
+  - Telemetry reports `IMU_READY` and bias-corrected `gyro_z` in centidegrees per second.
+  - The gyro bias is calibrated at boot while motors are stopped, so keep the rover still for the short startup window when evaluating gyro-assisted moves.
+  - Gyro integration is active only during a received move command; the idle robot does not continuously close a heading loop and should not drift-drive itself.
+  - Turn phase uses integrated gyro Z to stop near the requested relative yaw, but remains bounded by a dead-reckoning-derived time cap plus headroom.
+  - Straight drive still uses PWM-time dead reckoning for distance; gyro only adds a small left/right PWM correction to reduce heading drift during the active drive phase.
+  - Current bring-up constants in firmware are `0.160` drive PWM, `0.450` turn PWM, `100 mm/s` linear estimate, and `20 deg/s` turn timing seed.
+  - A `+5 deg` turn command completed through gyro stop at about `+4.21 deg` estimated yaw.
+  - A `-5 deg` turn command completed through gyro stop at about `-4.20 deg` estimated yaw.
+  - A `20 mm` straight command completed on the distance time estimate and showed small gyro-based PWM correction.
+  - Earlier `0.350` turn PWM produced a yaw impulse but stalled against scrub on this floor/setup, so the current direct-turn seed is `0.450`.
 - Pi-side I2C was not reliable during probing and is not the preferred voltage source. Use ESP32 serial feedback for rover voltage.
 - Old development folders were moved to `../archive` .
 - Keep generated Python environments out of git. Recreate the tool venv with:

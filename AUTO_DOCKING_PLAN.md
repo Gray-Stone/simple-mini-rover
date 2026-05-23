@@ -20,7 +20,7 @@ The dock CAD places the AprilTag center point at a nominal height of `200 mm` ab
 - USB flashing path: `/dev/ttyUSB0` works with `esptool`, so custom ESP32 firmware is recoverable if needed.
 - Live feedback works over serial. The ESP32 reports battery voltage, current motor command echo, temperature, and IMU attitude fields.
 - Camera: USB `Arducam_8mp` is visible through V4L2 as `/dev/video0`; OpenCV can read frames. Raspberry Pi `rpicam` reports no CSI camera.
-- Python environment gap: OpenCV is installed system-wide, but AprilTag Python detector packages still need to be installed or added to project requirements.
+- Visual pose tooling now uses system OpenCV plus the saved `mrcal` camera model; no separate AprilTag Python dependency is required for the current flow.
 
 ## ESP32 and IMU Capability
 
@@ -74,14 +74,15 @@ Custom ESP32 firmware should be deferred unless stock firmware fails a concrete 
    - Use OpenCV's AprilTag dictionary support first; add a separate AprilTag detector dependency only if OpenCV detection is not reliable enough.
    - Current printed dock tag is `tag16h5` ID `0`; use actual tag size `0.034 m` for pose estimation.
    - Verify tag detection at expected dock distances, skew angles, and lighting.
+   - Treat illumination as part of the detection system. Dark-scene tests already showed that auto exposure can overreact when only the tag is brightly lit, causing the tag to wash out and detection to fail.
 
 2. Add calibration tools.
    - Calibrate camera intrinsics using OpenCV.
    - Keep image collection separate from the actual calibration solve. Use a browser preview server on the Pi: low-resolution live preview for positioning, high-resolution still capture for saved calibration images.
    - Current checkerboard is `9 x 7` squares, so use `8 x 6` inner corners for OpenCV. Measure the physical square size before the calibration solve.
-   - Save intrinsics and distortion data in a repo-local config file.
+   - The current pose-estimation flow loads the saved `mrcal` model directly from the calibration session output.
    - Record AprilTag family and physical tag size.
-   - Add docked-pose calibration: place the robot in confirmed charging-contact position and save the observed tag pose as the target. Seed expectations from the CAD nominal tag center height of `200 mm` above the floor, but never hard-code it as truth.
+   - Add docked-pose calibration: place the robot in confirmed charging-contact position and save the observed tag pose as the target. The current utility writes this to `config/auto_docking/docked_tag_pose.json`. Seed expectations from the CAD nominal tag center height of `200 mm` above the floor, but never hard-code it as truth.
    - Add simple motor calibration for sign convention, minimum PWM that moves forward, minimum PWM that turns, and safe pulse durations.
 
 3. Build the Pi-side rover control layer.
@@ -94,8 +95,12 @@ Custom ESP32 firmware should be deferred unless stock firmware fails a concrete 
    - Respect the current observed deadbands: forward commands below about `0.10` PWM may do nothing, and turn commands below about `0.30` to `0.35` PWM may be too weak or inconsistent to use.
 
 4. Implement visual docking control.
-   - Estimate tag pose from each camera frame.
-   - Compare live tag pose to the calibrated docked pose.
+   - Estimate tag pose from each camera frame. The current utility uses the OpenCV camera frame: `+X` right in image, `+Y` down in image, `+Z` forward from camera.
+   - Compare live tag pose to the calibrated docked pose saved from the docked-pose calibration step.
+   - Consider explicit control of active illumination before or during docking.
+   - Do not assume the archived Waveshare `T=132` ESP32 light path controls the real lamp on this rover. The user reports the actual lamp is a custom Raspberry Pi-header install powered from Pi `5V`.
+   - Current confirmed pin mapping is `P39 = GND` and `P12 = GPIO18 / BCM18`, with the lamp observed to turn on when `GPIO18` is driven high.
+   - The exact transistor/switching topology is still worth documenting, but basic on/off software control is already available through `tools/light_ctrl.py`.
    - Use slow, stepwise control rather than smooth high-rate control.
    - First reduce large heading/lateral errors, then creep forward while correcting yaw, then use short final pulses near contact.
    - Stop immediately if the tag is lost; optionally allow a bounded slow yaw reacquisition only when the tag was seen recently.

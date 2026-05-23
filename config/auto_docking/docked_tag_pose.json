@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "captured_at": "2026-05-20T03:32:09.673083+00:00",
+  "pose_frame": {
+    "name": "tag_in_camera_opencv",
+    "camera_axes": {
+      "x": "right_in_image",
+      "y": "down_in_image",
+      "z": "forward_from_camera"
+    },
+    "pose_definition": "solvePnP tag pose expressed in the camera frame"
+  },
+  "camera": {
+    "device": "/dev/video0",
+    "model": "/home/leogray/wave_rover_dev/data/camera_calibration/captures/20260519_023511/calibration/mrcal/camera-0.cameramodel",
+    "requested": {
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "fourcc": "MJPG",
+      "autofocus": false,
+      "focus_absolute": 350
+    },
+    "actual": {
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "focus": 350.0,
+      "autofocus": 0.0
+    }
+  },
+  "tag": {
+    "family": "tag16h5",
+    "id": 0,
+    "size_m": 0.034
+  },
+  "capture": {
+    "frames_processed": 25,
+    "matched_samples": 25
+  },
+  "translation_m": {
+    "axis_order": [
+      "x_right",
+      "y_down",
+      "z_forward"
+    ],
+    "mean": [
+      0.0031247094776531443,
+      -0.003231553344876062,
+      0.3442859566624384
+    ],
+    "median": [
+      0.0031253733215137838,
+      -0.0032310916298015947,
+      0.3442857234703319
+    ],
+    "std": [
+      1.5700956028955883e-05,
+      1.088260022475368e-05,
+      0.000290075137784742
+    ]
+  },
+  "rotation": {
+    "rvec_mean_rad": [
+      -0.00218210683814716,
+      -0.11781538214733377,
+      -3.0852522298340452
+    ],
+    "rotation_matrix_mean": [
+      [
+        -0.9985364409971658,
+        0.0540791219025054,
+        -0.0006515941742179732
+      ],
+      [
+        -0.05397132509749639,
+        -0.995627379701004,
+        0.07624445459792056
+      ],
+      [
+        0.0034744881542859048,
+        0.07616803374098592,
+        0.9970889421551612
+      ]
+    ],
+    "euler_xyz_deg_mean": [
+      4.368364118964302,
+      -0.19907390774910794,
+      -176.90614891677814
+    ]
+  },
+  "quality": {
+    "reprojection_rmse_px_mean": 0.316861312837168,
+    "reprojection_rmse_px_max": 0.5398873397346602,
+    "mean_edge_px_mean": 175.88280000000003,
+    "mean_edge_px_min": 175.69
+  }
+}
