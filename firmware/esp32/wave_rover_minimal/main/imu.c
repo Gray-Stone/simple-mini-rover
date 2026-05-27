@@ -97,10 +97,8 @@ static esp_err_t calibrate_bias(wr_imu_t *imu)
     return ESP_OK;
 }
 
-esp_err_t wr_imu_init(wr_imu_t *imu)
+esp_err_t wr_i2c_bus_new(i2c_master_bus_handle_t *bus)
 {
-    memset(imu, 0, sizeof(*imu));
-
     const i2c_master_bus_config_t bus_config = {
         .i2c_port = WR_QMI_I2C,
         .sda_io_num = WR_QMI_SDA,
@@ -111,7 +109,13 @@ esp_err_t wr_imu_init(wr_imu_t *imu)
         .trans_queue_depth = 0,
         .flags.enable_internal_pullup = true,
     };
-    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &imu->bus), "wr_imu", "bus");
+    return i2c_new_master_bus(&bus_config, bus);
+}
+
+esp_err_t wr_imu_init_on_bus(wr_imu_t *imu, i2c_master_bus_handle_t bus)
+{
+    memset(imu, 0, sizeof(*imu));
+    imu->bus = bus;
 
     esp_err_t error = add_device(imu, WR_QMI_ADDRESS_HIGH);
     if (error != ESP_OK) {
@@ -130,6 +134,13 @@ esp_err_t wr_imu_init(wr_imu_t *imu)
 
     imu->ready = true;
     return ESP_OK;
+}
+
+esp_err_t wr_imu_init(wr_imu_t *imu)
+{
+    i2c_master_bus_handle_t bus = NULL;
+    ESP_RETURN_ON_ERROR(wr_i2c_bus_new(&bus), "wr_imu", "bus");
+    return wr_imu_init_on_bus(imu, bus);
 }
 
 bool wr_imu_ready(const wr_imu_t *imu)

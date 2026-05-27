@@ -2,6 +2,8 @@
 
 Date: 2026-05-18
 
+See also: `AUTO_DOCKING_DESIGN.md` for the intended docking behavior. This plan file is for implementation sequencing and assumptions; the design file is the behavior contract.
+
 ## Goal
 
 Build a basic Raspberry Pi top-level controller that uses the camera view of the dock AprilTag to guide the WAVE ROVER into the dock until charging contact is made.
@@ -14,29 +16,29 @@ The dock CAD places the AprilTag center point at a nominal height of `200 mm` ab
 
 - Rover base: WAVE ROVER 4WD chassis with four no-encoder DC motors.
 - Motor topology: two motors are wired in parallel per side/channel. The ESP32 controls left/right motor groups, not individual wheel speeds.
-- Motor control: stock JSON `T=1` commands are PWM-percentage style commands in `[-0.5, 0.5]`, not measured velocity commands.
-- Lower controller: ESP32 running stock Waveshare `WAVE_ROVER_V0.9` firmware.
-- Pi-to-ESP32 link: `/dev/serial0` works at 115200 baud with newline-terminated JSON.
-- USB flashing path: `/dev/ttyUSB0` works with `esptool`, so custom ESP32 firmware is recoverable if needed.
-- Live feedback works over serial. The ESP32 reports battery voltage, current motor command echo, temperature, and IMU attitude fields.
+- Motor control: the current minimal firmware exposes bounded relative moves plus raw signed left/right PWM, not measured velocity control.
+- Lower controller: ESP32 running the custom minimal firmware under `firmware/esp32/wave_rover_minimal/`.
+- Pi-to-ESP32 runtime link: `/dev/serial0` works at `460800` baud with the compact binary protocol.
+- USB flashing path: `/dev/ttyUSB0` works with `esptool`; use it for flashing/debug, not normal runtime control.
+- Live feedback works over serial. The ESP32 reports telemetry including motion state, gyro Z, voltage, current, and motor command state.
 - Camera: USB `Arducam_8mp` is visible through V4L2 as `/dev/video0`; OpenCV can read frames. Raspberry Pi `rpicam` reports no CSI camera.
 - Visual pose tooling now uses system OpenCV plus the saved `mrcal` camera model; no separate AprilTag Python dependency is required for the current flow.
 
 ## ESP32 and IMU Capability
 
-Use the stock ESP32 firmware first.
+Use the current minimal ESP32 firmware path.
 
-The current firmware exposes useful IMU data:
+The current firmware exposes useful telemetry:
 
-- `{"T":126}` returns yaw/pitch/roll plus gyro, accelerometer, magnetometer, and temperature fields.
-- `{"T":130}` returns chassis feedback including voltage, motor command echo, yaw/pitch/roll, and temperature.
+- fixed-rate binary `TELEMETRY` packets include gyro Z, commanded PWM, estimated bounded move progress, and power telemetry
+- `CMD_MOVE_REL`, `CMD_PWM`, and `CMD_STOP` are the intended host-control primitives
 
 This is enough for a Pi-side, closed-loop-ish yaw controller:
 
-- Read the starting yaw.
-- Send bounded differential motor commands with `T=1`.
-- Poll yaw from `T=126` or `T=130`.
-- Stop when the wrapped yaw delta reaches the target angle.
+- Read the starting heading state from telemetry or re-sense with the camera.
+- Send bounded turn or raw-PWM commands through the minimal protocol.
+- Poll streamed telemetry while the move is active.
+- Stop when the bounded move completes, or issue explicit `STOP` on any fault or abort condition.
 - Use a timeout, conservative PWM, and a final zero command.
 
 Current control findings from floor tests on `2026-05-20`:
@@ -83,11 +85,12 @@ Custom ESP32 firmware should be deferred unless stock firmware fails a concrete 
    - The current pose-estimation flow loads the saved `mrcal` model directly from the calibration session output.
    - Record AprilTag family and physical tag size.
    - Add docked-pose calibration: place the robot in confirmed charging-contact position and save the observed tag pose as the target. The current utility writes this to `config/auto_docking/docked_tag_pose.json`. Seed expectations from the CAD nominal tag center height of `200 mm` above the floor, but never hard-code it as truth.
+   - Keep a separate visual edge-alignment target for the final pre-contact pose. The current execute path defaults to `config/auto_docking/dock_edge_tag_pose.json`, then finishes contact with a monitored push rather than assuming the visual edge pose itself means charging.
    - Add simple motor calibration for sign convention, minimum PWM that moves forward, minimum PWM that turns, and safe pulse durations.
 
 3. Build the Pi-side rover control layer.
-   - Wrap serial JSON commands to `/dev/serial0`.
-   - Use only `T=1` motor commands for normal motion.
+   - Wrap the current minimal ESP32 binary serial protocol on `/dev/serial0`.
+   - Use `CMD_MOVE_REL`, `CMD_PWM`, and `CMD_STOP` as the normal motion/control primitives.
    - Provide immediate `stop()` and send zero on process exit.
    - Add a watchdog: stale camera frame, serial failure, tag loss, low voltage, timeout, or user interrupt all command zero.
    - Add an IMU yaw helper for approximate `turn_degrees()` behavior.
@@ -97,12 +100,12 @@ Custom ESP32 firmware should be deferred unless stock firmware fails a concrete 
 4. Implement visual docking control.
    - Estimate tag pose from each camera frame. The current utility uses the OpenCV camera frame: `+X` right in image, `+Y` down in image, `+Z` forward from camera.
    - Compare live tag pose to the calibrated docked pose saved from the docked-pose calibration step.
-   - Consider explicit control of active illumination before or during docking.
-   - Do not assume the archived Waveshare `T=132` ESP32 light path controls the real lamp on this rover. The user reports the actual lamp is a custom Raspberry Pi-header install powered from Pi `5V`.
-   - Current confirmed pin mapping is `P39 = GND` and `P12 = GPIO18 / BCM18`, with the lamp observed to turn on when `GPIO18` is driven high.
-   - The exact transistor/switching topology is still worth documenting, but basic on/off software control is already available through `tools/light_ctrl.py`.
+   - Keep geometry-sensitive camera work at locked manual focus `350` unless a different focus has its own matching calibration.
+   - Daytime can use auto exposure. Night should use fixed `exposure_time_absolute`, with `280` as the default and `300` or `320` as acceptable alternatives.
+   - The rover's onboard light is unplugged, so assume external/manual lighting only.
    - Use slow, stepwise control rather than smooth high-rate control.
-   - First reduce large heading/lateral errors, then creep forward while correcting yaw, then use short final pulses near contact.
+   - First reduce large heading/lateral errors, then creep forward while correcting yaw, then switch to a slow low-PWM final push near contact.
+   - During that final push, monitor INA219 telemetry continuously and send zero immediately once charging is detected instead of waiting for the full push duration to expire.
    - Stop immediately if the tag is lost; optionally allow a bounded slow yaw reacquisition only when the tag was seen recently.
 
 5. Test in increasing risk order.
@@ -128,4 +131,5 @@ Custom ESP32 firmware should be deferred unless stock firmware fails a concrete 
 - Camera intrinsics and docked tag pose can be calibrated and reloaded.
 - The rover can perform approximate yaw turns using IMU feedback.
 - The controller can command slow, bounded motor pulses and stop safely on all tested failure paths.
+- The final docking stage can hold a slow forward push into the dock and interrupt that push immediately when INA219 telemetry indicates charging.
 - From any start pose where the dock tag is visible within the tested envelope, the rover can drive into the dock and make charging contact.

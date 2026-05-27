@@ -16,6 +16,8 @@ firmware/**/sdkconfig.old
 firmware/**/managed_components/
 data/camera_calibration/captures/
 data/motion_probes/
+data/minimal_motion_specs/
+data/auto_docking_runs/
 data/docking_heading_steps/
 data/tag_motion_analysis/
 data/tag_motion_probes/

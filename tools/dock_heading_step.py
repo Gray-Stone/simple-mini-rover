@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
         help="Saved dock reference for comparison metrics.",
     )
     parser.add_argument("--port", default="/dev/serial0")
-    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--baud", type=int, default=460800)
     parser.add_argument("--timeout", type=float, default=0.05)
     parser.add_argument(
         "--arc-pwm",

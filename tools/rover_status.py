@@ -1,88 +1,63 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import time
 
-import serial
-
-
-def open_serial(port: str, baud: int, timeout: float) -> serial.Serial:
-    ser = serial.Serial()
-    ser.port = port
-    ser.baudrate = baud
-    ser.timeout = timeout
-    ser.write_timeout = 1
-    ser.dsrdtr = False
-    ser.rtscts = False
-    ser.dtr = False
-    ser.rts = False
-    ser.open()
-    ser.setDTR(False)
-    ser.setRTS(False)
-    return ser
+from minimal_rover_serial import PACKET_TELEMETRY, format_telemetry, open_port, read_packets, unpack_telemetry_packet
 
 
-def send_json(ser: serial.Serial, payload: dict) -> None:
-    msg = json.dumps(payload, separators=(",", ":")) + "\n"
-    ser.write(msg.encode("utf-8"))
-    ser.flush()
-
-
-def read_json_lines(ser: serial.Serial, seconds: float) -> list[dict]:
-    deadline = time.time() + seconds
-    objects = []
-    while time.time() < deadline:
-        raw = ser.readline()
-        if not raw:
-            continue
-        text = raw.decode("utf-8", "replace").strip()
-        try:
-            objects.append(json.loads(text))
-        except json.JSONDecodeError:
-            pass
-    return objects
-
-
-def wait_until_ready(ser: serial.Serial, seconds: float) -> None:
-    deadline = time.time() + seconds
-    saw_boot_output = False
-    quiet_deadline = time.time() + 1.0
-    while time.time() < deadline:
-        raw = ser.readline()
-        if not raw:
-            if not saw_boot_output and time.time() >= quiet_deadline:
-                return
-            continue
-        text = raw.decode("utf-8", "replace").strip()
-        saw_boot_output = True
-        if "UGV started." in text:
-            return
+def telemetry_dict(sample) -> dict[str, float | int | bool | str | list[str]]:
+    return {
+        "uptime_ms": sample.uptime_ms,
+        "active_seq": sample.active_seq,
+        "phase": sample.phase_name,
+        "flags": sample.flags,
+        "flag_names": sample.flag_names,
+        "x_target_mm": sample.x_target_mm,
+        "z_target_deg": sample.z_target_cdeg / 100.0,
+        "x_est_mm": sample.x_est_mm,
+        "z_est_deg": sample.z_est_cdeg / 100.0,
+        "left_milli": sample.left_milli,
+        "right_milli": sample.right_milli,
+        "gyro_z_dps": sample.gyro_z_cdeg_s / 100.0,
+        "power_ready": sample.power_ready,
+        "bus_mv": sample.bus_mv,
+        "voltage_v": sample.bus_mv / 1000.0,
+        "current_ma": sample.current_ma,
+        "current_a": sample.current_ma / 1000.0,
+        "shunt_uv": sample.shunt_uv,
+    }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Read WAVE ROVER status over serial.")
-    parser.add_argument("--port", default="/dev/ttyUSB0")
-    parser.add_argument("--baud", type=int, default=115200)
-    parser.add_argument("--timeout", type=float, default=0.25)
-    parser.add_argument("--wait", type=float, default=20.0)
+    parser = argparse.ArgumentParser(description="Read one telemetry snapshot from the current minimal WAVE ROVER serial protocol.")
+    parser.add_argument("--port", default="/dev/serial0")
+    parser.add_argument("--baud", type=int, default=460800)
+    parser.add_argument("--timeout", type=float, default=0.05)
+    parser.add_argument("--read-seconds", type=float, default=1.0)
+    parser.add_argument("--json", action="store_true", help="Print the latest telemetry as formatted JSON.")
     args = parser.parse_args()
 
-    with open_serial(args.port, args.baud, args.timeout) as ser:
-        wait_until_ready(ser, args.wait)
-        send_json(ser, {"T": 143, "cmd": 0})
-        time.sleep(0.1)
-        send_json(ser, {"T": 130})
-        packets = read_json_lines(ser, 5.0)
+    with open_port(args) as ser:
+        ser.timeout = args.timeout
+        ser.reset_input_buffer()
+        packets = read_packets(ser, args.read_seconds)
 
-    feedback = [p for p in packets if p.get("T") == 1001]
-    if not feedback:
-        print("No feedback packet received.")
+    telemetry_packets = [
+        packet for packet in packets if packet.packet_type == PACKET_TELEMETRY
+    ]
+    if not telemetry_packets:
+        print("No telemetry packet received.")
         return 1
 
-    latest = feedback[-1]
-    print(json.dumps(latest, indent=2, sort_keys=True))
-    if "v" in latest:
-        print(f"voltage: {latest['v']:.3f} V")
+    sample = unpack_telemetry_packet(telemetry_packets[-1])
+    if sample is None:
+        print("Latest telemetry packet could not be decoded.")
+        return 1
+
+    if args.json:
+        print(json.dumps(telemetry_dict(sample), indent=2, sort_keys=True))
+    else:
+        print(format_telemetry(telemetry_packets[-1]))
     return 0
 
 

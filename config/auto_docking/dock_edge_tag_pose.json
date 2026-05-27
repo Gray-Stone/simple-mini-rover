@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "captured_at": "2026-05-23T17:50:43.519339+00:00",
+  "system": {
+    "hostname": "rover-pi",
+    "machine_id": "fa15ffa4e74e4a399c73dd8bb3a2300e"
+  },
+  "pose_frame": {
+    "name": "tag_in_camera_opencv",
+    "camera_axes": {
+      "x": "right_in_image",
+      "y": "down_in_image",
+      "z": "forward_from_camera"
+    },
+    "pose_definition": "solvePnP tag pose expressed in the camera frame"
+  },
+  "camera": {
+    "device": "/dev/video0",
+    "camera_id": "/dev/video0",
+    "model": "/home/leogray/wave_rover_dev/data/camera_calibration/captures/20260519_023511/calibration/mrcal/camera-0.cameramodel",
+    "requested": {
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "fourcc": "MJPG",
+      "autofocus": false,
+      "focus_absolute": 350
+    },
+    "actual": {
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "focus": 350.0,
+      "autofocus": 0.0
+    }
+  },
+  "tag": {
+    "family": "tag16h5",
+    "id": 0,
+    "size_m": 0.034
+  },
+  "capture": {
+    "frames_processed": 23,
+    "matched_samples": 20
+  },
+  "translation_m": {
+    "axis_order": [
+      "x_right",
+      "y_down",
+      "z_forward"
+    ],
+    "mean": [
+      0.0079768036832835,
+      -0.010571675092305572,
+      0.3362443599461108
+    ],
+    "median": [
+      0.007976379815734907,
+      -0.010572588216519869,
+      0.3362346150781225
+    ],
+    "std": [
+      1.1809203387102726e-05,
+      6.9582136545519185e-06,
+      0.00010324324571525197
+    ]
+  },
+  "rotation": {
+    "rvec_mean_rad": [
+      -0.011936556845554908,
+      -0.04513114985224839,
+      -3.0894130453670843
+    ],
+    "rotation_matrix_mean": [
+      [
+        -0.9986274561308444,
+        0.05191059471117314,
+        0.006963764669353286
+      ],
+      [
+        -0.051685029202568435,
+        -0.998230863175244,
+        0.029390501199136325
+      ],
+      [
+        0.008477123212944438,
+        0.028990239066608754,
+        0.999543748127561
+      ]
+    ],
+    "euler_xyz_deg_mean": [
+      1.6613108063796185,
+      -0.48570919994070766,
+      -177.03723936783723
+    ]
+  },
+  "quality": {
+    "reprojection_rmse_px_mean": 0.10503474042056496,
+    "reprojection_rmse_px_max": 0.17943822173470167,
+    "mean_edge_px_mean": 180.33200000000002,
+    "mean_edge_px_min": 180.24
+  }
+}

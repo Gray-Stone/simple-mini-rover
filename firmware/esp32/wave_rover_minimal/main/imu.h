@@ -15,6 +15,8 @@ typedef struct {
     bool ready;
 } wr_imu_t;
 
+esp_err_t wr_i2c_bus_new(i2c_master_bus_handle_t *bus);
+esp_err_t wr_imu_init_on_bus(wr_imu_t *imu, i2c_master_bus_handle_t bus);
 esp_err_t wr_imu_init(wr_imu_t *imu);
 bool wr_imu_ready(const wr_imu_t *imu);
 esp_err_t wr_imu_read_yaw_rate_cdeg_s(wr_imu_t *imu, int32_t *rate_cdeg_s);

@@ -84,15 +84,16 @@ Date: 2026-05-23
   - `tools/apriltag_pose.py` now estimates live tag pose using the saved `mrcal` camera model plus OpenCV `solvePnP`.
   - `tools/dock_pose_calibrate.py` now captures a short burst of visible docked-tag pose samples and saves the target pose JSON to `config/auto_docking/docked_tag_pose.json`.
   - `tools/dock_heading_step.py` now provides a first single-step docking/heading experiment path: it senses a short burst of tag poses, reports off-axis and centerline metrics in the tag frame, and can optionally execute one one-sided arc pulse.
-  - `tools/tag_motion_probe.py` now combines AprilTag pose logging with ESP32 IMU polling and a tiny commanded rover pulse in one run.
-  - `tools/tag_motion_collect.py` now runs structured repeated linear and/or rotation batches and records batch-friendly metadata under `data/tag_motion_batches/` for later large-batch analysis.
+  - Current calibrated-geometry policy is manual focus `350` only, because the saved camera model and dock target were captured there. Additional focus values are only valid if they get their own matching calibration.
+  - Daytime work can use auto exposure. Night work should use fixed `exposure_time_absolute`, with `280` as the default and `300` or `320` as known alternatives.
+  - `tools/tag_motion_probe.py` and `tools/tag_motion_collect.py` are older JSON-era experiment utilities and should not be treated as the current runtime path unless explicitly ported to the minimal protocol.
   - Quick probe command detected the expected tag in 47 of 60 frames at requested `1280x720@30`; observed processing rate was about 4.3 FPS in the current Python/OpenCV probe.
   - `640x480` is faster, but the current tag view is only about 30 px per edge and can be intermittent depending on framing/lighting. Prefer `1280x720` for initial calibration and docking bring-up, then downshift only if the detection envelope remains reliable.
   - A warmed `1280x720` probe detected the expected tag in 21 of 30 frames with about 64 px mean edge length in the current setup.
   - Debug frame from the quick probe was saved outside the repo at `/tmp/wave_rover_apriltag_debug.jpg`.
   - Night/room-light testing on `2026-05-20` exposed a specific failure mode: when the scene is dark and only the dock tag is strongly illuminated, camera auto exposure can overreact and wash the tag out enough to lose detection. Future docking work should treat lighting as an explicit subsystem, not an afterthought.
   - Daytime docking-step experiments later on `2026-05-20` found a different failure mode: in the current stand-off/setup, the tag was visibly in frame but OpenCV could not decode it reliably at `1280x720` or `1920x1080`, even after two small forward nudges.
-  - The same scene became usable again at `3264x2448 @ 15 fps` with manual exposure locked to `220` and autofocus enabled. A short `tools/apriltag_pose.py` run at that mode matched 5 of 10 frames, with mean edge length about `245 px` on the matched frames and range about `0.631 m`.
+  - The same scene became usable again at `3264x2448 @ 15 fps` during early bring-up, but those autofocus-based checks should now be treated as historical only because they do not match the saved focus-350 calibration.
 - Camera calibration target:
   - Checkerboard squares: 9 across by 7 down.
   - User description: 4 white + 5 black across, 4 black + 3 white down.
@@ -131,24 +132,14 @@ Date: 2026-05-23
 - Camera focus:
   - The capture server disables UVC continuous autofocus on launch unless `--autofocus` is passed.
   - Current UVC controls report `focus_automatic_continuous=0`, so continuous autofocus is already disabled.
-  - Current manual `focus_absolute` value is `432` on the Arducam.
+  - Current geometry-sensitive camera usage should explicitly lock `focus_absolute=350`.
   - The capture browser exposes focus in the normal camera-control list with a numeric input beside the slider.
   - Calibration and docking should use the same locked focus value; changing focus after calibration can change effective intrinsics enough to hurt pose accuracy.
-  - The currently saved docking calibration model is not tied to the current manual focus setting above; it is tied to session `20260519_023511`, which used `focus_absolute=350`.
-  - The daytime `3264x2448` recovery above depended on autofocus, so its live pose numbers are good enough for relative controller bring-up but should not be treated as final absolute docking truth against the current focus-350 calibration.
-- Lighting control path from archived software:
-  - The old Pi-side stack used ESP32 JSON command `{"T":132,"IO4":pwmA,"IO5":pwmB}` for 12 V switched outputs, not direct Raspberry Pi GPIO PWM.
-  - Archive code path: `../archive/ugv_rpi/base_ctrl.py` defines `lights_ctrl()` as `T=132` with `IO4` and `IO5`.
-  - Archived vendor notes say `IO4` is the chassis-light switch and `IO5` is the pan-tilt/head-light switch; WAVE ROVER without the PT light hardware may not have a usable lamp fitted even though the command exists.
-  - For future docking work, active illumination should be considered through this ESP32-controlled path first, with hardware presence confirmed on the actual rover.
-- Custom light on this rover:
-  - User clarified on `2026-05-20` that the actual docking-relevant lamp is a custom install wired on the Raspberry Pi header, powered from Pi `5V`, and not part of the stock WAVE ROVER light hardware path.
-  - Therefore the archived `T=132` ESP32 light path should not be assumed to control the real installed lamp on this rover.
-  - User later identified the two Pi header connections as `P39` and `P12`.
-  - On Raspberry Pi 40-pin headers, `P39` is `GND` and `P12` is `GPIO18` (`BCM 18`, hardware PWM-capable).
-  - Quick live test confirmed the lamp turns on when `GPIO18` is driven high, so the current software convention is active-high light control on `BCM18`.
-  - The most likely topology is a custom low-side or transistor-drive control path with `GPIO18` as the logic/control pin and `P39` as ground.
-  - `tools/light_ctrl.py` now provides a minimal helper for `on`, `off`, and `status`.
+  - The currently saved docking calibration model is tied to session `20260519_023511`, which used `focus_absolute=350`.
+  - Older autofocus-based live-pose checks are useful only as bring-up history and should not be treated as final absolute docking truth against the current focus-350 calibration.
+- Lighting:
+  - The rover's onboard light is unplugged and should not be used or controlled in software.
+  - Night docking should assume external/manual lighting only.
 - AprilTag pose convention:
   - Live `tools/apriltag_pose.py` output uses the OpenCV camera frame: `+X` right in the image, `+Y` down in the image, `+Z` forward from the camera.
   - The reported pose is the dock tag pose expressed in that camera frame from `solvePnP`.
@@ -169,7 +160,7 @@ Date: 2026-05-23
     - `turn-ccw` at `0.40` PWM for `0.10 s` produced a strong instantaneous IMU yaw response but almost no settled tag-pose change, which is consistent with scrub/settling rather than clean rigid-body rotation.
     - `turn-cw` at `0.40` PWM for `0.10 s` lost pre-phase tag tracking, so that was taken as the next practical turn-calibration envelope limit from that setup.
   - First `tools/dock_heading_step.py` live results on `2026-05-20`:
-    - Sense-only mode at `3264x2448 @ 15 fps` with `--autofocus --auto-exposure manual --exposure-time 220` reported stable enough metrics to use for single-step experiments.
+    - Sense-only mode during early bring-up reported stable enough metrics to use for single-step experiments, but those autofocus-based checks are now historical only.
     - A representative sense burst reported about `bearing=-2.14 deg`, `heading_vs_normal=-0.09 deg`, `off_axis=-0.023 m`, and range about `0.625 m`.
     - Relative to the saved docked reference, that same burst was about `-0.025 m` lateral and about `-0.127 m` farther away in tag-frame camera coordinates.
     - Two one-sided left-arc tests using `L=0`, `R=0.16` for `0.25 s` and then `L=0`, `R=0.22` for `0.40 s` produced no clearly measurable change in the visual heading metrics, so those arc magnitudes/durations are below the current useful heading-step threshold on this floor/setup.
@@ -188,11 +179,8 @@ Date: 2026-05-23
   - Rover body frame is defined as right-handed with `+X` forward, `+Y` left, `+Z` up.
   - Positive yaw / positive `omega_z` / positive Z turn means counter-clockwise viewed from above, which is a left turn.
   - Positive forward motion means `+X`.
-  - Stock `T=1` sign convention on this rover is:
-    - `L > 0`: left side drives forward
-    - `R > 0`: right side drives forward
-    - Pure positive-yaw pulse therefore uses `L < 0`, `R > 0`
-    - Pure negative-yaw pulse therefore uses `L > 0`, `R < 0`
+  - On the current minimal raw-PWM path, `left_milli > 0` means the left side drives forward and `right_milli > 0` means the right side drives forward.
+  - Older JSON/T=1 probe scripts remain in the tree as history only and should not be used as the current runtime control path.
   - Quick floor deadband checks on `2026-05-20` suggest these practical minimums for visible response:
     - Forward `+X`: about `0.10` PWM is the minimum that produces noticeable motion.
     - Positive/negative Z turn: about `0.30` PWM is the minimum that produces noticeable turning, but this is not stable enough to be considered a good operating point.
@@ -218,11 +206,30 @@ Date: 2026-05-23
   - Gyro integration is active only during a received move command; the idle robot does not continuously close a heading loop and should not drift-drive itself.
   - Turn phase uses integrated gyro Z to stop near the requested relative yaw, but remains bounded by a dead-reckoning-derived time cap plus headroom.
   - Straight drive still uses PWM-time dead reckoning for distance; gyro only adds a small left/right PWM correction to reduce heading drift during the active drive phase.
-  - Current bring-up constants in firmware are `0.160` drive PWM, `0.450` turn PWM, `100 mm/s` linear estimate, and `20 deg/s` turn timing seed.
+  - Current bring-up constants in firmware are table-derived drive PWM, configurable turn PWM with default `0.650`, and a conservative `9 deg/s` turn timing seed for the IMU-bounded turn phase.
+  - The binary protocol now also exposes `CMD_PWM`: raw signed left/right motor PWM in milli-units plus bounded duration, for direct PWM/time-to-distance mapping without changing the position-command semantics.
   - A `+5 deg` turn command completed through gyro stop at about `+4.21 deg` estimated yaw.
   - A `-5 deg` turn command completed through gyro stop at about `-4.20 deg` estimated yaw.
   - A `20 mm` straight command completed on the distance time estimate and showed small gyro-based PWM correction.
   - Earlier `0.350` turn PWM produced a yaw impulse but stalled against scrub on this floor/setup, so the current direct-turn seed is `0.450`.
+  - Night raw-PWM mapping on `2026-05-23` used `tools/pwm_motion_sweep.py` with low-light camera settings and alternating forward/reverse pulses. Complete forward range changes from the initial compact sweep:
+    - `PWM=160`, `200 ms`: about `5.7 mm`; `350 ms`: about `19.7 mm`.
+    - `PWM=180`, `200 ms`: about `16.3 mm`; `350 ms`: about `29.8 mm`.
+    - `PWM=200`, `200 ms`: about `18.9 mm`; `350 ms`: about `38.4 mm`.
+    - `PWM=220`, `200 ms`: forward leg about `25.5 mm`, then the USB hub dropped before the after-reverse camera capture.
+  - Later continuous timeline runs with exposure locked at `200` produced a clean linear PWM/time fit for mapped drive PWM `250..700`. The minimal firmware now accepts `drive_milli` on `CMD_MOVE_REL`, defaults to `400`, rejects unmapped values, and estimates linear drive duration from separate forward/reverse calibration rows with interpolation.
+  - Recommended first closed-loop lower-control behavior: Pi sends body-frame distance plus drive PWM; ESP32 computes bounded duration from the table, runs that PWM only for the active move, and applies gyro yaw correction during the drive phase. No idle feedback loop runs.
+  - Daytime smoke test after flashing the calibrated move firmware: `move --x-mm 200 --drive-milli 400` completed normally, telemetry reached `x_est=200 mm`, and AprilTag measured about `192 mm` forward with about `-3 mm` lateral change and `-0.54 deg` yaw change. The return command `move --x-mm -200 --drive-milli 400` also completed normally and visually returned near the original range, about `189 mm` inferred from before/after stable poses. Daytime camera needed auto exposure plus autofocus; fixed focus `350` was too soft at this close range.
+  - `tools/auto_dock.py` is the first final-path auto docking loop: it senses the AprilTag, compares camera-frame tag lateral/range against the selected target pose, chooses one bounded turn or drive step, executes via `CMD_MOVE_REL` when `--execute` is passed, settles, and repeats. Dry-run on `2026-05-23` from the current daytime pose selected a capped `+180 mm` drive step from about `+456 mm` range error and `+27 mm` lateral error.
+  - First live `tools/auto_dock.py --execute` run on `2026-05-23` executed three forward drive steps (`180 mm`, `180 mm`, `142 mm`) and one small turn (`-2.97 deg`). A follow-up sense-only check reported the dock condition satisfied with about `-15 mm` range error, `+15 mm` lateral error, and `2.56 deg` bearing error. This is close enough to risk contact; do not run more forward steps from this pose without raising the stop range or manually backing off.
+  - Off-axis live testing on `2026-05-23` exposed the current limitation: point-turn plus straight-drive can center bearing and range, but large off-axis heading correction trades against lateral/bearing and can oscillate. The script now prevents unsafe close-in turns by backing away first when close but misaligned, but it does not yet robustly converge a large off-axis case. A curvature/arc primitive or explicit multi-point staging maneuver is needed before treating off-axis docking as solved.
+  - `tools/auto_dock.py` now has the first explicit multi-point off-axis planner: when far enough from the dock and laterally offset, it chooses an approach waypoint on the dock centerline, executes `turn -> slanted drive -> turn back`, then reacquires the tag and replans. If the tag is lost during an execute run, it performs a bounded small yaw scan and aborts if reacquisition fails. Close-but-misaligned poses still back away before attempting alignment.
+  - Physical off-axis waypoint testing on `2026-05-23` showed that the original `0.450` fixed turn PWM was too weak for reliable point turns and could trip the turn watchdog before reaching target yaw. The move command now reuses the old reserved field as `turn_milli`, with firmware validation range `[450, 900]`; `tools/auto_dock.py` was tested with `--turn-milli 750`, which removed the turn watchdog fault.
+  - The same physical run showed that a waypoint with almost no forward distance to the approach point degenerates into an attempted sideways correction. `tools/auto_dock.py` now requires configurable forward room before lateral waypointing (`--min-waypoint-forward-mm`, default `120`) and backs out to create that room. The latest run reduced lateral error from about `-178 mm` to about `-114 mm` while keeping heading near target, but did not complete docking within 8 steps. Next tuning target is stronger/more complete lateral waypoint correction, plus better short reverse calibration.
+  - A later user-run off-axis attempt showed the planner was too strict near the dock: with lateral and bearing essentially aligned, a heading error of about `5.8 deg` caused a backoff instead of a final drive. `tools/auto_dock.py` now separates strict heading deadband from final-approach acceptance via `--final-approach-heading-deg` default `8`; poses like that choose a forward drive instead of backing out. The script also prints sensing progress, no-tag reacquire attempts, and each executed segment so long no-detection windows are visible in the terminal.
+  - The previous target pose was still too far from the physical base. On `2026-05-23`, the current lined-up, non-contact edge position was recorded to `config/auto_docking/dock_edge_tag_pose.json` at focus `350`, `1280x720`, matching the default auto-dock camera mode, with 20 matched samples. Median tag translation was about `[+0.0080, -0.0106, +0.3362] m`. A dry check against this new target reported about `+0.1 mm` range error, effectively `0 mm` lateral error, and action `done`. `tools/auto_dock.py` now defaults to this edge target; pass `--target-pose config/auto_docking/docked_tag_pose.json` only to use the older contact-position reference.
+  - Current final-contact behavior in `tools/auto_dock.py` is now explicit: once the visual edge pose is satisfied, the script checks INA219 telemetry for charging, then if needed commands a slow raw-PWM forward push with intentionally generous duration so the rover can stay loaded into the dock after bottom-out. The Pi watches INA219 during that push and sends immediate `STOP` once charging is inferred, instead of treating the visual edge pose or a fixed short nudge as success.
+  - The `PWM=220` test coincided with kernel logs showing `usb usb1-port1: disabled by hub (EMI?)`, disconnecting both CP210x and Arducam. Rebinding the Pi xHCI controller recovered USB. Treat raw PWM sweeps above roughly `200` as an EMI/power-integrity risk until wiring/decoupling is improved.
 - Pi-side I2C was not reliable during probing and is not the preferred voltage source. Use ESP32 serial feedback for rover voltage.
 - Old development folders were moved to `../archive` .
 - Keep generated Python environments out of git. Recreate the tool venv with:

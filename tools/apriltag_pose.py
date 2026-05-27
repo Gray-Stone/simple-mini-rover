@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import re
 import signal
 import subprocess
 import sys
@@ -90,8 +91,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--family", default="tag16h5", choices=sorted(APRILTAG_FAMILIES))
     parser.add_argument("--id", type=int, default=0, help="Expected tag ID.")
     parser.add_argument("--tag-size", type=float, default=0.034, help="Tag black-square size in meters.")
-    parser.add_argument("--width", type=int, default=1280)
-    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--width", type=int, default=1920)
+    parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--fourcc", default="MJPG")
     parser.add_argument(
@@ -102,7 +103,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--focus-absolute",
         type=int,
-        help="Optional manual focus value for UVC cameras, e.g. 432 on the current Arducam.",
+        default=350,
+        help="Manual focus value for UVC cameras. Use 350 with the current saved calibration unless explicitly using a separately calibrated focus.",
     )
     parser.add_argument(
         "--frames",
@@ -147,6 +149,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--exposure-time",
+        "--exposure-time-absolute",
+        dest="exposure_time",
         type=int,
         help="Optional manual exposure_time_absolute value.",
     )
@@ -185,6 +189,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def camera_source(value: str):
+    video_path = re.fullmatch(r"/dev/video(\d+)", str(value))
+    if video_path:
+        return int(video_path.group(1))
     try:
         return int(value)
     except ValueError:
@@ -236,9 +243,15 @@ def load_camera_calibration(model_path: Path | None) -> CameraCalibration:
 
 
 def open_camera(args: argparse.Namespace) -> cv2.VideoCapture:
+    args.camera = resolve_camera_device(str(args.camera))
     cap = cv2.VideoCapture(camera_source(args.camera), cv2.CAP_V4L2)
     if not cap.isOpened():
-        raise RuntimeError(f"could not open camera {args.camera!r}")
+        available = ", ".join(list_capture_devices())
+        if available:
+            raise RuntimeError(
+                f"could not open camera {args.camera!r}; available capture devices: {available}"
+            )
+        raise RuntimeError(f"could not open camera {args.camera!r}; no capture devices detected")
 
     cap.set(cv2.CAP_PROP_AUTOFOCUS, 1 if args.autofocus else 0)
     if args.focus_absolute is not None:
@@ -255,6 +268,59 @@ def v4l2_device_arg(device: str) -> str:
     if device.isdigit():
         return f"/dev/video{device}"
     return device
+
+
+def device_supports_video_capture(device: str) -> bool:
+    device_path = v4l2_device_arg(str(device))
+    if not Path(device_path).exists():
+        return False
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "-d", device_path, "--all"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return True
+    output = result.stdout
+    return "Video input" in output and "Video Capture" in output
+
+
+def list_capture_devices() -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    by_id_root = Path("/dev/v4l/by-id")
+    if by_id_root.exists():
+        for entry in sorted(by_id_root.iterdir()):
+            try:
+                resolved = str(entry.resolve())
+            except FileNotFoundError:
+                continue
+            if resolved not in seen:
+                seen.add(resolved)
+                candidates.append(resolved)
+    for entry in sorted(Path("/dev").glob("video*")):
+        resolved = str(entry)
+        if resolved not in seen:
+            seen.add(resolved)
+            candidates.append(resolved)
+    return [device for device in candidates if device_supports_video_capture(device)]
+
+
+def resolve_camera_device(device: str) -> str:
+    requested = v4l2_device_arg(str(device))
+    if device_supports_video_capture(requested):
+        return requested
+
+    candidates = list_capture_devices()
+    if candidates:
+        resolved = candidates[0]
+        if resolved != requested:
+            print(f"camera_device_resolved={requested}->{resolved}", file=sys.stderr)
+        return resolved
+    return requested
 
 
 def run_v4l2(device: str, args: list[str]) -> subprocess.CompletedProcess:
@@ -303,14 +369,20 @@ def read_camera_controls(device: str) -> dict:
     return parse_v4l2_control_values(result.stdout)
 
 
+def set_camera_control(device: str, name: str, value: int) -> dict:
+    run_v4l2(device, ["-c", f"{name}={int(value)}"])
+    return read_camera_controls(device)
+
+
 def apply_camera_control_overrides(args: argparse.Namespace) -> dict:
+    args.camera = resolve_camera_device(str(args.camera))
     desired = {}
     if args.low_light_preset:
         desired.update(
             {
                 "auto_exposure": 1,
                 "exposure_dynamic_framerate": 0,
-                "exposure_time_absolute": 350,
+                "exposure_time_absolute": 280,
                 "gain": 8,
                 "white_balance_automatic": 0,
                 "white_balance_temperature": 4200,
@@ -623,6 +695,10 @@ def preview_html(port: int) -> bytes:
     img {{ max-width: 100%; height: auto; border: 1px solid #444; }}
     pre {{ background: #1b1b1b; padding: 12px; overflow: auto; border: 1px solid #333; }}
     .wrap {{ display: grid; gap: 16px; }}
+    .controls {{ background: #1b1b1b; border: 1px solid #333; padding: 12px; }}
+    .row {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+    input[type="range"] {{ width: min(560px, 100%); }}
+    .muted {{ color: #aaa; font-size: 13px; }}
   </style>
 </head>
 <body>
@@ -630,20 +706,83 @@ def preview_html(port: int) -> bytes:
     <div>
       <img src="/stream.mjpg" alt="AprilTag preview">
     </div>
+    <div class="controls">
+      <div class="row">
+        <label for="exposure">Exposure</label>
+        <input id="exposure" type="range" min="1" max="5000" step="1" value="280">
+        <span id="exposureValue">280</span>
+      </div>
+      <div class="muted" id="controlStatus">manual exposure slider</div>
+    </div>
     <div>
       <pre id="status">loading</pre>
     </div>
   </div>
   <script>
+    let pendingExposure = null;
+    let exposureTimer = null;
+    let sliderDirty = false;
+
+    function syncExposureSlider(data) {{
+      const slider = document.getElementById('exposure');
+      const valueNode = document.getElementById('exposureValue');
+      const controls = data.camera_controls || {{}};
+      const exposure = controls.exposure_time_absolute;
+      if (typeof exposure === 'number') {{
+        if (!sliderDirty) {{
+          slider.value = String(exposure);
+        }}
+        valueNode.textContent = String(exposure);
+      }}
+    }}
+
+    async function pushExposure(value) {{
+      const statusNode = document.getElementById('controlStatus');
+      pendingExposure = value;
+      statusNode.textContent = `setting exposure to ${{value}}`;
+      try {{
+        const r = await fetch('/control/exposure', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{exposure_time_absolute: value}}),
+        }});
+        const data = await r.json();
+        if (!r.ok) {{
+          throw new Error(data.error || `HTTP ${{r.status}}`);
+        }}
+        statusNode.textContent = `exposure set to ${{data.camera_controls?.exposure_time_absolute ?? value}}`;
+      }} catch (err) {{
+        statusNode.textContent = `exposure update failed: ${{String(err)}}`;
+      }} finally {{
+        pendingExposure = null;
+        sliderDirty = false;
+      }}
+    }}
+
+    function scheduleExposure(value) {{
+      clearTimeout(exposureTimer);
+      exposureTimer = setTimeout(() => pushExposure(value), 140);
+    }}
+
     async function refresh() {{
       try {{
         const r = await fetch('/status.json', {{cache: 'no-store'}});
         const data = await r.json();
+        syncExposureSlider(data);
         document.getElementById('status').textContent = JSON.stringify(data, null, 2);
       }} catch (err) {{
         document.getElementById('status').textContent = String(err);
       }}
     }}
+
+    const slider = document.getElementById('exposure');
+    slider.addEventListener('input', (event) => {{
+      sliderDirty = true;
+      const value = Number(event.target.value);
+      document.getElementById('exposureValue').textContent = String(value);
+      scheduleExposure(value);
+    }});
+
     refresh();
     setInterval(refresh, 500);
   </script>
@@ -653,7 +792,7 @@ def preview_html(port: int) -> bytes:
     return html.encode("utf-8")
 
 
-def make_preview_handler(state: PreviewState):
+def make_preview_handler(state: PreviewState, camera_device: str):
     class PreviewHandler(server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -704,18 +843,60 @@ def make_preview_handler(state: PreviewState):
 
             self.send_error(404)
 
+        def do_POST(self):
+            self.connection.settimeout(0.5)
+            parsed = urlparse(self.path)
+            if parsed.path != "/control/exposure":
+                self.send_error(404)
+                return
+
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                content_length = 0
+            raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+                exposure = int(payload["exposure_time_absolute"])
+                controls = set_camera_control(camera_device, "auto_exposure", 1)
+                controls = set_camera_control(camera_device, "exposure_dynamic_framerate", 0)
+                controls = set_camera_control(camera_device, "exposure_time_absolute", exposure)
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "camera_controls": controls,
+                    },
+                    indent=2,
+                ).encode("utf-8")
+                self.send_response(200)
+            except (KeyError, ValueError, json.JSONDecodeError, subprocess.SubprocessError, FileNotFoundError) as exc:
+                body = json.dumps(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                    },
+                    indent=2,
+                ).encode("utf-8")
+                self.send_response(400)
+
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def log_message(self, format, *args):
             return
 
     return PreviewHandler
 
 
-def start_preview_server(host: str, port: int, state: PreviewState):
+def start_preview_server(host: str, port: int, state: PreviewState, camera_device: str):
     class PreviewHTTPServer(server.ThreadingHTTPServer):
         daemon_threads = True
         allow_reuse_address = True
 
-    httpd = PreviewHTTPServer((host, port), make_preview_handler(state))
+    httpd = PreviewHTTPServer((host, port), make_preview_handler(state, camera_device))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     return httpd
@@ -753,7 +934,7 @@ def main() -> int:
     preview_state = PreviewState() if args.serve else None
     preview_server = None
     if preview_state is not None:
-        preview_server = start_preview_server(args.host, args.port, preview_state)
+        preview_server = start_preview_server(args.host, args.port, preview_state, args.camera)
         print(
             f"preview=http://{args.host if args.host != '0.0.0.0' else '127.0.0.1'}:{args.port}/",
             file=sys.stderr,

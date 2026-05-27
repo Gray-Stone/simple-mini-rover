@@ -2,6 +2,7 @@
 import argparse
 import json
 import signal
+import socket
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +48,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--focus-absolute",
         type=int,
-        help="Optional manual focus value for UVC cameras, e.g. 432 on the current Arducam.",
+        default=350,
+        help="Manual focus value for UVC cameras. Use 350 with the current saved calibration unless explicitly using a separately calibrated focus.",
     )
     parser.add_argument(
         "--samples",
@@ -113,6 +115,10 @@ def build_output_record(
     return {
         "version": 1,
         "captured_at": datetime.now(timezone.utc).isoformat(),
+        "system": {
+            "hostname": socket.gethostname(),
+            "machine_id": Path("/etc/machine-id").read_text().strip() if Path("/etc/machine-id").exists() else None,
+        },
         "pose_frame": {
             "name": "tag_in_camera_opencv",
             "camera_axes": {
@@ -124,6 +130,7 @@ def build_output_record(
         },
         "camera": {
             "device": args.camera,
+            "camera_id": args.camera,
             "model": str(calibration_path),
             "requested": {
                 "width": args.width,

@@ -45,7 +45,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--focus-absolute",
         type=int,
-        help="Optional manual focus value for UVC cameras, e.g. 432 on the current Arducam.",
+        default=350,
+        help="Manual focus value for UVC cameras. Use 350 for the current calibrated setup unless you are deliberately collecting a separate calibration at another focus.",
     )
     parser.add_argument("--warmup-frames", type=int, default=10)
     parser.add_argument("--jpeg-quality", type=int, default=95)

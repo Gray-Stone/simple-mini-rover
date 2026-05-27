@@ -12,6 +12,7 @@
 typedef enum {
     WR_PACKET_CMD_STOP = 1,
     WR_PACKET_CMD_MOVE_REL = 2,
+    WR_PACKET_CMD_PWM = 3,
     WR_PACKET_ACK = 0x80,
     WR_PACKET_TELEMETRY = 0x81,
 } wr_packet_type_t;
@@ -22,6 +23,7 @@ typedef enum {
     WR_ACK_BAD_LENGTH = 2,
     WR_ACK_BUSY = 3,
     WR_ACK_BAD_COMMAND = 4,
+    WR_ACK_BAD_VALUE = 5,
 } wr_ack_status_t;
 
 typedef enum {
@@ -30,12 +32,14 @@ typedef enum {
     WR_PHASE_DRIVE = 2,
     WR_PHASE_DONE = 3,
     WR_PHASE_FAULT = 4,
+    WR_PHASE_PWM = 5,
 } wr_motion_phase_t;
 
 typedef enum {
     WR_TELEM_ACTIVE = 1 << 0,
     WR_TELEM_TIMEOUT = 1 << 1,
     WR_TELEM_IMU_READY = 1 << 2,
+    WR_TELEM_POWER_READY = 1 << 3,
 } wr_telemetry_flag_t;
 
 typedef struct __attribute__((packed)) {
@@ -51,7 +55,16 @@ typedef struct __attribute__((packed)) {
     int32_t z_cdeg;
     uint16_t max_time_ms;
     uint16_t flags;
+    int16_t drive_milli;
+    int16_t turn_milli;
 } wr_cmd_move_rel_t;
+
+typedef struct __attribute__((packed)) {
+    int16_t left_milli;
+    int16_t right_milli;
+    uint16_t duration_ms;
+    uint16_t flags;
+} wr_cmd_pwm_t;
 
 typedef struct __attribute__((packed)) {
     uint8_t status;
@@ -71,12 +84,16 @@ typedef struct __attribute__((packed)) {
     int16_t left_milli;
     int16_t right_milli;
     int32_t gyro_z_cdeg_s;
+    int32_t bus_mv;
+    int32_t current_ma;
+    int32_t shunt_uv;
 } wr_telemetry_t;
 
 _Static_assert(sizeof(wr_header_t) == 8, "wire header size changed");
-_Static_assert(sizeof(wr_cmd_move_rel_t) == 12, "move command size changed");
+_Static_assert(sizeof(wr_cmd_move_rel_t) == 16, "move command size changed");
+_Static_assert(sizeof(wr_cmd_pwm_t) == 8, "pwm command size changed");
 _Static_assert(sizeof(wr_ack_t) == 4, "ack size changed");
-_Static_assert(sizeof(wr_telemetry_t) == 32, "telemetry size changed");
+_Static_assert(sizeof(wr_telemetry_t) == 44, "telemetry size changed");
 
 typedef void (*wr_packet_handler_t)(const wr_header_t *header, const uint8_t *payload, void *ctx);
 

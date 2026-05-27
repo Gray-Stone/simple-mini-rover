@@ -1,8 +1,10 @@
 idf_component_register(
     SRCS
         "app_main.c"
+        "ina219.c"
         "imu.c"
         "motor.c"
+        "oled.c"
         "protocol.c"
     INCLUDE_DIRS
         "."
