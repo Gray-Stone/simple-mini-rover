@@ -10,11 +10,16 @@ __pycache__/
 *.key
 *.p12
 *.pfx
+node_modules/
 firmware/**/build/
 firmware/**/sdkconfig
 firmware/**/sdkconfig.old
 firmware/**/managed_components/
 data/camera_calibration/captures/
+data/camera_calibration/interpolated/
+data/exposure_sweeps/
+data/live_visual_servo_probe/
+data/live_visual_servo_runs/
 data/motion_probes/
 data/minimal_motion_specs/
 data/auto_docking_runs/
