@@ -134,4 +134,3 @@ python3 tools/live_visual_servo.py \
   --lease-margin-s 0.10 \
   --execute
 ```
-
