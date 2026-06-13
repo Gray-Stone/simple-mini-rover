@@ -178,7 +178,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    calibration = load_camera_calibration(args.model)
+    calibration = load_camera_calibration(
+        args.model,
+        focus_absolute=args.focus_absolute,
+        autofocus=args.autofocus,
+    )
     detector = make_detector(args.family)
     cap = open_camera(args)
 

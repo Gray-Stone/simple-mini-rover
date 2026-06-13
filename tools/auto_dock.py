@@ -1375,7 +1375,11 @@ def main() -> int:
     run_dir = args.output_root / (datetime.now().strftime("%Y%m%d_%H%M%S") + f"_{args.name}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    calibration = load_camera_calibration(args.model)
+    calibration = load_camera_calibration(
+        args.model,
+        focus_absolute=args.focus_absolute,
+        autofocus=args.autofocus,
+    )
     detector = make_detector(args.family)
     startup_controls = apply_camera_control_overrides(args)
     cap = open_camera(args)

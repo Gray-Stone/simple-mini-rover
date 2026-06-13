@@ -445,7 +445,11 @@ def run_arc_step(
 def main() -> int:
     args = parse_args()
 
-    calibration = load_camera_calibration(args.model)
+    calibration = load_camera_calibration(
+        args.model,
+        focus_absolute=args.focus_absolute,
+        autofocus=args.autofocus,
+    )
     detector = make_detector(args.family)
     startup_controls = apply_camera_control_overrides(args)
     cap = open_camera(args)

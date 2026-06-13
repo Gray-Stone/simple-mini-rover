@@ -27,6 +27,8 @@ APRILTAG_FAMILIES = {
 
 DEFAULT_MODEL_ROOT = Path("data/camera_calibration/captures")
 stop_requested = False
+FOCUS_DIR_RE = re.compile(r"focus_(\d+)$")
+FOCUS_CALIBRATION_DIR_RE = re.compile(r"mrcal_focus_(\d+)$")
 
 
 @dataclass
@@ -189,9 +191,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def camera_source(value: str):
-    video_path = re.fullmatch(r"/dev/video(\d+)", str(value))
-    if video_path:
-        return int(video_path.group(1))
     try:
         return int(value)
     except ValueError:
@@ -211,13 +210,113 @@ def resolve_default_model_path() -> Path:
     if model_paths:
         return max(model_paths, key=lambda path: path.stat().st_mtime)
 
+    summary_paths = sorted(DEFAULT_MODEL_ROOT.glob("*/calibration/**/summary.json"))
+    if summary_paths:
+        newest = max(summary_paths, key=lambda path: path.stat().st_mtime)
+        data = json.loads(newest.read_text())
+        model_path = Path(data["model"])
+        if model_path.is_file():
+            return model_path
+
+    model_paths = sorted(DEFAULT_MODEL_ROOT.glob("*/calibration/**/camera-0.cameramodel"))
+    if model_paths:
+        return max(model_paths, key=lambda path: path.stat().st_mtime)
+
     raise FileNotFoundError(
         "no saved mrcal camera model found under data/camera_calibration/captures/"
     )
 
 
-def load_camera_calibration(model_path: Path | None) -> CameraCalibration:
-    resolved = model_path if model_path is not None else resolve_default_model_path()
+def infer_focus_from_summary_path(summary_path: Path) -> int | None:
+    match = FOCUS_CALIBRATION_DIR_RE.fullmatch(summary_path.parent.name)
+    if match:
+        return int(match.group(1))
+
+    session_root = summary_path.parents[2]
+    image_root = session_root / "images"
+    if image_root.exists():
+        focus_values = []
+        for directory in sorted(image_root.iterdir()):
+            if not directory.is_dir():
+                continue
+            match = FOCUS_DIR_RE.fullmatch(directory.name)
+            if match:
+                focus_values.append(int(match.group(1)))
+        focus_values = sorted(set(focus_values))
+        if len(focus_values) == 1:
+            return focus_values[0]
+
+    session_info_path = session_root / "session.json"
+    if session_info_path.is_file():
+        try:
+            session_info = json.loads(session_info_path.read_text())
+        except json.JSONDecodeError:
+            return None
+        for key in ("current_focus_absolute", "initial_focus_absolute"):
+            value = session_info.get(key)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float) and value.is_integer():
+                return int(value)
+    return None
+
+
+def available_focus_calibration_models() -> dict[int, Path]:
+    matches: dict[int, tuple[float, Path]] = {}
+    for summary_path in sorted(DEFAULT_MODEL_ROOT.glob("*/calibration/**/summary.json")):
+        focus_absolute = infer_focus_from_summary_path(summary_path)
+        if focus_absolute is None:
+            continue
+        try:
+            data = json.loads(summary_path.read_text())
+        except json.JSONDecodeError:
+            continue
+        model_path = Path(data.get("model", ""))
+        if not model_path.is_file():
+            continue
+        score = summary_path.stat().st_mtime
+        previous = matches.get(focus_absolute)
+        if previous is None or score >= previous[0]:
+            matches[focus_absolute] = (score, model_path.resolve())
+    return {focus: item[1] for focus, item in sorted(matches.items())}
+
+
+def resolve_camera_model_path(
+    model_path: Path | None,
+    focus_absolute: int | None = None,
+    autofocus: bool = False,
+) -> Path:
+    if model_path is not None:
+        return model_path.resolve()
+
+    if focus_absolute is not None and not autofocus:
+        available = available_focus_calibration_models()
+        resolved = available.get(int(focus_absolute))
+        if resolved is not None:
+            return resolved
+        if available:
+            available_text = ", ".join(str(value) for value in sorted(available))
+            raise FileNotFoundError(
+                f"no saved mrcal camera model found for focus_absolute={int(focus_absolute)}; "
+                f"available calibrated focus values: {available_text}"
+            )
+        raise FileNotFoundError(
+            "no saved mrcal camera model found under data/camera_calibration/captures/"
+        )
+
+    return resolve_default_model_path().resolve()
+
+
+def load_camera_calibration(
+    model_path: Path | None,
+    focus_absolute: int | None = None,
+    autofocus: bool = False,
+) -> CameraCalibration:
+    resolved = resolve_camera_model_path(
+        model_path,
+        focus_absolute=focus_absolute,
+        autofocus=autofocus,
+    )
     resolved = resolved.resolve()
     model = mrcal.cameramodel(str(resolved))
     lensmodel, intrinsics = model.intrinsics()
@@ -282,8 +381,10 @@ def device_supports_video_capture(device: str) -> bool:
             text=True,
             timeout=2,
         )
-    except (subprocess.SubprocessError, FileNotFoundError):
+    except FileNotFoundError:
         return True
+    except subprocess.SubprocessError:
+        return False
     output = result.stdout
     return "Video input" in output and "Video Capture" in output
 
@@ -907,7 +1008,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    calibration = load_camera_calibration(args.model)
+    calibration = load_camera_calibration(
+        args.model,
+        focus_absolute=args.focus_absolute,
+        autofocus=args.autofocus,
+    )
     detector = make_detector(args.family)
     startup_controls = apply_camera_control_overrides(args)
     cap = open_camera(args)

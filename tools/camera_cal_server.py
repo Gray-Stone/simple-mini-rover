@@ -458,6 +458,7 @@ class CameraState:
             "controls": controls,
             "values": values,
             "error": self.camera_controls_error,
+            "focus": self.actual_focus_locked(),
         }
 
     def set_camera_control(self, name: str, value) -> dict:
@@ -506,7 +507,7 @@ class CameraState:
         return {
             "name": name,
             "value": values.get(name, normalized),
-            "controls": self.camera_control_state(),
+            "camera_controls": self.camera_control_state(),
         }
 
     def set_focus(self, value: int) -> dict:
@@ -904,6 +905,18 @@ PAGE = """<!doctype html>
       font-family: ui-sans-serif, system-ui, sans-serif;
       font-size: 13px;
     }
+    .control-bool {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      min-height: 42px;
+    }
+    .control-readback {
+      color: var(--muted);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 12px;
+      white-space: nowrap;
+    }
     .control-inputs { align-items: center; display: grid; gap: 8px; grid-template-columns: 1fr; }
     .tuning-note {
       background: rgba(47, 143, 84, 0.10);
@@ -1096,10 +1109,18 @@ function controlValueLabel(control) {
   return String(control.value);
 }
 
+function autofocusReadbackLabel(focusState) {
+  if (!focusState) return 'reported ?';
+  const reported = focusState.camera_reported_focus;
+  if (reported === null || reported === undefined || Number.isNaN(Number(reported))) return 'reported ?';
+  return 'reported ' + Math.round(Number(reported));
+}
+
 function renderCameraControls(state) {
   const container = document.getElementById('cameraControls');
   const status = document.getElementById('cameraControlsStatus');
   const controls = state.controls || [];
+  const focusState = state.focus || {};
   container.innerHTML = '';
   status.textContent = state.error ? 'control read error: ' + state.error : 'camera controls are recorded with each capture';
   const leftColumn = document.createElement('div');
@@ -1134,10 +1155,20 @@ function renderCameraControls(state) {
       input.addEventListener('blur', () => releaseControlEditing(control.name));
       input.addEventListener('change', () => setCameraControl(control.name, input.value));
     } else if (control.type === 'bool') {
-      input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = Boolean(control.value);
-      input.addEventListener('change', () => setCameraControl(control.name, input.checked));
+      input = document.createElement('div');
+      input.className = 'control-bool';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = Boolean(control.value);
+      checkbox.addEventListener('change', () => setCameraControl(control.name, checkbox.checked));
+      input.appendChild(checkbox);
+      if (control.name === 'focus_automatic_continuous') {
+        const readback = document.createElement('span');
+        readback.className = 'control-readback';
+        readback.id = 'autofocusReadback';
+        readback.textContent = autofocusReadbackLabel(focusState);
+        input.appendChild(readback);
+      }
     } else {
       const inputs = document.createElement('div');
       inputs.className = 'control-inputs';
@@ -1190,7 +1221,12 @@ function renderCameraControls(state) {
       input = inputs;
     }
 
-    const primaryInput = input.className === 'control-inputs' ? input.querySelector('input[type="range"]') : input;
+    const primaryInput =
+      input.className === 'control-inputs'
+        ? input.querySelector('input[type="range"]')
+        : input.className === 'control-bool'
+          ? input.querySelector('input[type="checkbox"]')
+          : input;
     primaryInput.id = 'cameraControl_' + control.name;
     primaryInput.disabled = !control.available;
     if (numberInput) {
@@ -1244,7 +1280,7 @@ async function setCameraControl(name, value) {
   if (number && document.activeElement !== number) number.value = currentValue;
   activeControlName = null;
   controlEditing = false;
-  renderCameraControls(s.control.controls);
+  renderCameraControls(s.control.camera_controls || { controls: [] });
 }
 
 async function refreshStatus() {
